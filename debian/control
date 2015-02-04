@@ -1,0 +1,85 @@
+Source: xserver-xorg-input-libinput
+Section: x11
+Priority: optional
+Maintainer: Debian X Strike Force <debian-x@lists.debian.org>
+Uploaders: Timo Aaltonen <tjaalton@debian.org>,
+Build-Depends:
+ debhelper (>= 9),
+ dh-autoreconf,
+ libinput-dev (>= 0.8.0),
+ libudev-dev,
+ pkg-config,
+ quilt,
+ x11proto-core-dev,
+ x11proto-input-dev (>= 2.2),
+ xserver-xorg-dev (>= 2:1.15.99),
+ xutils-dev,
+Standards-Version: 3.9.6
+Vcs-Git: git://anonscm.debian.org/pkg-xorg/driver/xserver-xorg-input-libinput.git
+Vcs-Browser: http://anonscm.debian.org/cgit/pkg-xorg/driver/xserver-xorg-input-libinput.git
+
+Package: xserver-xorg-input-libinput
+Architecture: linux-any
+Depends:
+ ${shlibs:Depends},
+ ${misc:Depends},
+ ${xinpdriver:Depends},
+Provides:
+ ${xinpdriver:Provides}
+Description: X.Org X server -- libinput input driver
+ This package provides the driver for input devices using libinput library.
+ .
+ More information about X.Org can be found at:
+ <URL:http://www.X.org>
+ .
+ This package is built from the X.org xf86-input-libinput driver module.
+
+Package: xserver-xorg-input-libinput-dev
+Section: libdevel
+Architecture: all
+Depends:
+ ${shlibs:Depends},
+ ${misc:Depends}
+Description: X.Org X server -- libinput input driver (development headers)
+ This package provides the development headers for the libinput input driver
+ found in xserver-xorg-input-libinput. Non-developers likely have little use
+ for this package.
+ .
+ More information about X.Org can be found at:
+ <URL:http://www.X.org>
+ .
+ This package is built from the X.org xf86-input-libinput driver module.
+
+
+Package: xserver-xorg-input-libinput-udeb
+XC-Package-Type: udeb
+Section: debian-installer
+Architecture: linux-any
+Depends:
+ ${shlibs:Depends},
+ ${misc:Depends},
+ ${xinpdriver:Depends},
+ udev-udeb,
+Provides:
+ ${xinpdriver:Provides}
+Description: X.Org X server -- libinput input driver
+ This is a udeb, or a microdeb, for the debian-installer.
+
+Package: xserver-xorg-input-libinput-dbg
+Architecture: linux-any
+Depends:
+ ${misc:Depends},
+ xserver-xorg-input-libinput (= ${binary:Version}),
+Section: debug
+Priority: extra
+Description: X.Org X server -- libinput input driver (debug symbols)
+ This package provides the development headers for the libinput input driver
+ found in xserver-xorg-input-libinput. Non-developers likely have little use
+ for this package.
+ .
+ More information about X.Org can be found at:
+ <URL:http://www.X.org>
+ .
+ This package is built from the X.org xf86-input-libinput driver module.
+ .
+ This package provides debugging symbols for this Xorg X driver.
