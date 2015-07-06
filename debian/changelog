@@ -1,4 +1,4 @@
-xserver-xorg-input-libinput (0.6.0-1) UNRELEASED; urgency=medium
+xserver-xorg-input-libinput (0.11.0-1) UNRELEASED; urgency=medium
 
   * Initial release.
 
