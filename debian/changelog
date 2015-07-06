@@ -1,5 +1,5 @@
 xserver-xorg-input-libinput (0.11.0-1) UNRELEASED; urgency=medium
 
-  * Initial release.
+  * Initial release. (Closes: #784114)
 
  -- Timo Aaltonen <tjaalton@debian.org>  Tue, 16 Dec 2014 15:31:00 +0200
