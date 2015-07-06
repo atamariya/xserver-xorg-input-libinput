@@ -47,6 +47,12 @@
 #define XI86_SERVER_FD 0x20
 #endif
 
+#if GET_ABI_MAJOR(ABI_XINPUT_VERSION) * 1000 + GET_ABI_MINOR(ABI_XINPUT_VERSION) > 22000
+#define HAVE_VMASK_UNACCEL 1
+#else
+#undef HAVE_VMASK_UNACCEL
+#endif
+
 #define TOUCHPAD_NUM_AXES 4 /* x, y, hscroll, vscroll */
 #define TOUCH_MAX_SLOTS 15
 #define XORG_KEYCODE_OFFSET 8
@@ -71,10 +77,12 @@ struct xf86libinput {
 	char *path;
 	struct libinput_device *device;
 
-	int scroll_vdist;
-	int scroll_hdist;
-	int scroll_vdist_remainder;
-	int scroll_hdist_remainder;
+	struct {
+		int vdist;
+		int hdist;
+		int vdist_remainder;
+		int hdist_remainder;
+	} scroll;
 
 	struct {
 		double x;
@@ -83,17 +91,24 @@ struct xf86libinput {
 		double y_remainder;
 	} scale;
 
-	ValuatorMask *valuators;
+	BOOL has_abs;
 
-	struct {
+	ValuatorMask *valuators;
+	ValuatorMask *valuators_unaccelerated;
+
+	struct options {
 		BOOL tapping;
 		BOOL natural_scrolling;
 		BOOL left_handed;
+		BOOL middle_emulation;
 		CARD32 sendevents;
 		CARD32 scroll_button; /* xorg button number */
 		float speed;
 		float matrix[9];
 		enum libinput_config_scroll_method scroll_method;
+		enum libinput_config_click_method click_method;
+
+		unsigned char btnmap[MAX_BUTTONS + 1];
 	} options;
 };
 
@@ -224,7 +239,7 @@ LibinputApplyConfig(DeviceIntPtr dev)
 	    libinput_device_config_send_events_set_mode(device,
 							driver_data->options.sendevents) != LIBINPUT_CONFIG_STATUS_SUCCESS)
 		xf86IDrvMsg(pInfo, X_ERROR,
-			    "Failed to set SendEventsMode %d\n",
+			    "Failed to set SendEventsMode %u\n",
 			    driver_data->options.sendevents);
 
 	if (libinput_device_config_scroll_has_natural_scroll(device) &&
@@ -259,7 +274,8 @@ LibinputApplyConfig(DeviceIntPtr dev)
 			    driver_data->options.matrix[6], driver_data->options.matrix[7],
 			    driver_data->options.matrix[8]);
 
-	if (libinput_device_config_left_handed_set(device,
+	if (libinput_device_config_left_handed_is_available(device) &&
+	    libinput_device_config_left_handed_set(device,
 						   driver_data->options.left_handed) != LIBINPUT_CONFIG_STATUS_SUCCESS)
 		xf86IDrvMsg(pInfo, X_ERROR,
 			    "Failed to set LeftHanded to %d\n",
@@ -283,11 +299,37 @@ LibinputApplyConfig(DeviceIntPtr dev)
 			    method);
 	}
 
-	scroll_button = btn_xorg2linux(driver_data->options.scroll_button);
-	if (libinput_device_config_scroll_set_button(device, scroll_button) != LIBINPUT_CONFIG_STATUS_SUCCESS)
+	if (libinput_device_config_scroll_get_methods(device) & LIBINPUT_CONFIG_SCROLL_ON_BUTTON_DOWN) {
+		scroll_button = btn_xorg2linux(driver_data->options.scroll_button);
+		if (libinput_device_config_scroll_set_button(device, scroll_button) != LIBINPUT_CONFIG_STATUS_SUCCESS)
+			xf86IDrvMsg(pInfo, X_ERROR,
+				    "Failed to set ScrollButton to %u\n",
+				    driver_data->options.scroll_button);
+	}
+
+	if (libinput_device_config_click_set_method(device,
+						    driver_data->options.click_method) != LIBINPUT_CONFIG_STATUS_SUCCESS) {
+		const char *method;
+
+		switch (driver_data->options.click_method) {
+		case LIBINPUT_CONFIG_CLICK_METHOD_NONE: method = "none"; break;
+		case LIBINPUT_CONFIG_CLICK_METHOD_BUTTON_AREAS: method = "buttonareas"; break;
+		case LIBINPUT_CONFIG_CLICK_METHOD_CLICKFINGER: method = "clickfinger"; break;
+		default:
+			method = "unknown"; break;
+		}
+
 		xf86IDrvMsg(pInfo, X_ERROR,
-			    "Failed to set ScrollButton to %d\n",
-			    driver_data->options.scroll_button);
+			    "Failed to set click method to %s\n",
+			    method);
+	}
+
+	if (libinput_device_config_middle_emulation_is_available(device) &&
+	    libinput_device_config_middle_emulation_set_enabled(device,
+								driver_data->options.middle_emulation) != LIBINPUT_CONFIG_STATUS_SUCCESS)
+		xf86IDrvMsg(pInfo, X_ERROR,
+			    "Failed to set MiddleEmulation to %d\n",
+			    driver_data->options.middle_emulation);
 }
 
 static int
@@ -325,6 +367,8 @@ xf86libinput_on(DeviceIntPtr dev)
 
 	driver_context.device_enabled_count++;
 	dev->public.on = TRUE;
+
+	LibinputApplyConfig(dev);
 
 	return Success;
 }
@@ -367,7 +411,7 @@ init_button_map(unsigned char *btnmap, size_t size)
 	int i;
 
 	memset(btnmap, 0, size);
-	for (i = 0; i <= size; i++)
+	for (i = 0; i < size; i++)
 		btnmap[i] = i;
 }
 
@@ -409,22 +453,21 @@ xf86libinput_init_pointer(InputInfoPtr pInfo)
 	int nbuttons = 7;
 	int i;
 
-	unsigned char btnmap[MAX_BUTTONS + 1];
 	Atom btnlabels[MAX_BUTTONS];
 	Atom axislabels[TOUCHPAD_NUM_AXES];
 
 	for (i = BTN_BACK; i >= BTN_SIDE; i--) {
-		if (libinput_device_has_button(driver_data->device, i)) {
+		if (libinput_device_pointer_has_button(driver_data->device, i)) {
 			nbuttons += i - BTN_SIDE + 1;
 			break;
 		}
 	}
 
-	init_button_map(btnmap, ARRAY_SIZE(btnmap));
 	init_button_labels(btnlabels, ARRAY_SIZE(btnlabels));
 	init_axis_labels(axislabels, ARRAY_SIZE(axislabels));
 
-	InitPointerDeviceStruct((DevicePtr)dev, btnmap,
+	InitPointerDeviceStruct((DevicePtr)dev,
+				driver_data->options.btnmap,
 				nbuttons,
 				btnlabels,
 				xf86libinput_ptr_ctl,
@@ -442,8 +485,8 @@ xf86libinput_init_pointer(InputInfoPtr pInfo)
 			           XIGetKnownProperty(AXIS_LABEL_PROP_REL_Y),
 				   min, max, res * 1000, 0, res * 1000, Relative);
 
-	SetScrollValuator(dev, 2, SCROLL_TYPE_HORIZONTAL, driver_data->scroll_hdist, 0);
-	SetScrollValuator(dev, 3, SCROLL_TYPE_VERTICAL, driver_data->scroll_vdist, 0);
+	SetScrollValuator(dev, 2, SCROLL_TYPE_HORIZONTAL, driver_data->scroll.hdist, 0);
+	SetScrollValuator(dev, 3, SCROLL_TYPE_VERTICAL, driver_data->scroll.vdist, 0);
 
 	return Success;
 }
@@ -457,22 +500,21 @@ xf86libinput_init_pointer_absolute(InputInfoPtr pInfo)
 	int nbuttons = 7;
 	int i;
 
-	unsigned char btnmap[MAX_BUTTONS + 1];
 	Atom btnlabels[MAX_BUTTONS];
 	Atom axislabels[TOUCHPAD_NUM_AXES];
 
 	for (i = BTN_BACK; i >= BTN_SIDE; i--) {
-		if (libinput_device_has_button(driver_data->device, i)) {
+		if (libinput_device_pointer_has_button(driver_data->device, i)) {
 			nbuttons += i - BTN_SIDE + 1;
 			break;
 		}
 	}
 
-	init_button_map(btnmap, ARRAY_SIZE(btnmap));
 	init_button_labels(btnlabels, ARRAY_SIZE(btnlabels));
 	init_axis_labels(axislabels, ARRAY_SIZE(axislabels));
 
-	InitPointerDeviceStruct((DevicePtr)dev, btnmap,
+	InitPointerDeviceStruct((DevicePtr)dev,
+				driver_data->options.btnmap,
 				nbuttons,
 				btnlabels,
 				xf86libinput_ptr_ctl,
@@ -490,8 +532,10 @@ xf86libinput_init_pointer_absolute(InputInfoPtr pInfo)
 			           XIGetKnownProperty(AXIS_LABEL_PROP_ABS_Y),
 				   min, max, res * 1000, 0, res * 1000, Absolute);
 
-	SetScrollValuator(dev, 2, SCROLL_TYPE_HORIZONTAL, driver_data->scroll_hdist, 0);
-	SetScrollValuator(dev, 3, SCROLL_TYPE_VERTICAL, driver_data->scroll_vdist, 0);
+	SetScrollValuator(dev, 2, SCROLL_TYPE_HORIZONTAL, driver_data->scroll.hdist, 0);
+	SetScrollValuator(dev, 3, SCROLL_TYPE_VERTICAL, driver_data->scroll.vdist, 0);
+
+	driver_data->has_abs = TRUE;
 
 	return Success;
 }
@@ -558,6 +602,7 @@ static void
 xf86libinput_init_touch(InputInfoPtr pInfo)
 {
 	DeviceIntPtr dev = pInfo->dev;
+	struct xf86libinput *driver_data = pInfo->private;
 	int min, max, res;
 	unsigned char btnmap[MAX_BUTTONS + 1];
 	Atom btnlabels[MAX_BUTTONS];
@@ -568,7 +613,8 @@ xf86libinput_init_touch(InputInfoPtr pInfo)
 	init_button_labels(btnlabels, ARRAY_SIZE(btnlabels));
 	init_axis_labels(axislabels, ARRAY_SIZE(axislabels));
 
-	InitPointerDeviceStruct((DevicePtr)dev, btnmap,
+	InitPointerDeviceStruct((DevicePtr)dev,
+				driver_data->options.btnmap,
 				nbuttons,
 				btnlabels,
 				xf86libinput_ptr_ctl,
@@ -601,7 +647,8 @@ xf86libinput_init(DeviceIntPtr dev)
 	if (libinput_device_has_capability(device, LIBINPUT_DEVICE_CAP_KEYBOARD))
 		xf86libinput_init_keyboard(pInfo);
 	if (libinput_device_has_capability(device, LIBINPUT_DEVICE_CAP_POINTER)) {
-		if (libinput_device_config_calibration_has_matrix(device))
+		if (libinput_device_config_calibration_has_matrix(device) &&
+		    !libinput_device_config_accel_is_available(device))
 			xf86libinput_init_pointer_absolute(pInfo);
 		else
 			xf86libinput_init_pointer(pInfo);
@@ -609,12 +656,13 @@ xf86libinput_init(DeviceIntPtr dev)
 	if (libinput_device_has_capability(device, LIBINPUT_DEVICE_CAP_TOUCH))
 		xf86libinput_init_touch(pInfo);
 
+	LibinputApplyConfig(dev);
+	LibinputInitProperty(dev);
+	XIRegisterPropertyHandler(dev, LibinputSetProperty, NULL, NULL);
+
 	/* unref the device now, because we'll get a new ref during
 	   DEVICE_ON */
 	libinput_device_unref(device);
-
-        LibinputInitProperty(dev);
-        XIRegisterPropertyHandler(dev, LibinputSetProperty, NULL, NULL);
 
 	return 0;
 }
@@ -659,9 +707,21 @@ xf86libinput_handle_motion(InputInfoPtr pInfo, struct libinput_event_pointer *ev
 	y = libinput_event_pointer_get_dy(event);
 
 	valuator_mask_zero(mask);
+
+#if HAVE_VMASK_UNACCEL
+	{
+		double ux, uy;
+
+		ux = libinput_event_pointer_get_dx_unaccelerated(event);
+		uy = libinput_event_pointer_get_dy_unaccelerated(event);
+
+		valuator_mask_set_unaccelerated(mask, 0, x, ux);
+		valuator_mask_set_unaccelerated(mask, 1, y, uy);
+	}
+#else
 	valuator_mask_set_double(mask, 0, x);
 	valuator_mask_set_double(mask, 1, y);
-
+#endif
 	xf86PostMotionEventM(dev, Relative, mask);
 }
 
@@ -672,6 +732,13 @@ xf86libinput_handle_absmotion(InputInfoPtr pInfo, struct libinput_event_pointer 
 	struct xf86libinput *driver_data = pInfo->private;
 	ValuatorMask *mask = driver_data->valuators;
 	double x, y;
+
+	if (!driver_data->has_abs) {
+		xf86IDrvMsg(pInfo, X_ERROR,
+			    "Discarding absolute event from relative device. "
+			    "Please file a bug\n");
+		return;
+	}
 
 	x = libinput_event_pointer_get_absolute_x_transformed(event, TOUCH_AXIS_MAX);
 	y = libinput_event_pointer_get_absolute_y_transformed(event, TOUCH_AXIS_MAX);
@@ -732,18 +799,22 @@ xf86libinput_handle_axis(InputInfoPtr pInfo, struct libinput_event_pointer *even
 
 	axis = LIBINPUT_POINTER_AXIS_SCROLL_VERTICAL;
 	if (libinput_event_pointer_has_axis(event, axis)) {
-		if (source == LIBINPUT_POINTER_AXIS_SOURCE_WHEEL)
+		if (source == LIBINPUT_POINTER_AXIS_SOURCE_WHEEL) {
 			value = libinput_event_pointer_get_axis_value_discrete(event, axis);
-		else
+			value *=  driver_data->scroll.vdist;
+		} else {
 			value = libinput_event_pointer_get_axis_value(event, axis);
+		}
 		valuator_mask_set_double(mask, 3, value);
 	}
 	axis = LIBINPUT_POINTER_AXIS_SCROLL_HORIZONTAL;
 	if (libinput_event_pointer_has_axis(event, axis)) {
-		if (source == LIBINPUT_POINTER_AXIS_SOURCE_WHEEL)
+		if (source == LIBINPUT_POINTER_AXIS_SOURCE_WHEEL) {
 			value = libinput_event_pointer_get_axis_value_discrete(event, axis);
-		else
+			value *=  driver_data->scroll.hdist;
+		} else {
 			value = libinput_event_pointer_get_axis_value(event, axis);
+		}
 		valuator_mask_set_double(mask, 2, value);
 	}
 
@@ -937,192 +1008,365 @@ xf86libinput_log_handler(struct libinput *libinput,
 	LogVMessageVerb(type, verbosity, format, args);
 }
 
+static inline BOOL
+xf86libinput_parse_tap_option(InputInfoPtr pInfo,
+			      struct libinput_device *device)
+{
+	BOOL tap;
+
+	if (libinput_device_config_tap_get_finger_count(device) == 0)
+		return FALSE;
+
+	tap = xf86SetBoolOption(pInfo->options,
+				"Tapping",
+				libinput_device_config_tap_get_enabled(device));
+
+	if (libinput_device_config_tap_set_enabled(device, tap) !=
+	    LIBINPUT_CONFIG_STATUS_SUCCESS) {
+		xf86IDrvMsg(pInfo, X_ERROR,
+			    "Failed to set Tapping to %d\n",
+			    tap);
+		tap = libinput_device_config_tap_get_enabled(device);
+	}
+
+	return tap;
+}
+
+static inline double
+xf86libinput_parse_accel_option(InputInfoPtr pInfo,
+				struct libinput_device *device)
+{
+	double speed;
+
+	if (!libinput_device_config_accel_is_available(device))
+		return 0.0;
+
+	speed = xf86SetRealOption(pInfo->options,
+				  "AccelSpeed",
+				  libinput_device_config_accel_get_speed(device));
+	if (libinput_device_config_accel_set_speed(device, speed) !=
+	    LIBINPUT_CONFIG_STATUS_SUCCESS) {
+		xf86IDrvMsg(pInfo, X_ERROR,
+			    "Invalid speed %.2f, using 0 instead\n",
+			    speed);
+		speed = libinput_device_config_accel_get_speed(device);
+	}
+
+	return speed;
+}
+
+static inline BOOL
+xf86libinput_parse_natscroll_option(InputInfoPtr pInfo,
+				    struct libinput_device *device)
+{
+	BOOL natural_scroll;
+
+	if (!libinput_device_config_scroll_has_natural_scroll(device))
+		return FALSE;
+
+	natural_scroll = xf86SetBoolOption(pInfo->options,
+					   "NaturalScrolling",
+					   libinput_device_config_scroll_get_natural_scroll_enabled(device));
+	if (libinput_device_config_scroll_set_natural_scroll_enabled(device,
+								     natural_scroll) !=
+	    LIBINPUT_CONFIG_STATUS_SUCCESS) {
+		xf86IDrvMsg(pInfo, X_ERROR,
+			    "Failed to set NaturalScrolling to %d\n",
+			    natural_scroll);
+
+		natural_scroll = libinput_device_config_scroll_get_natural_scroll_enabled(device);
+	}
+
+	return natural_scroll;
+}
+
+static inline enum libinput_config_send_events_mode
+xf86libinput_parse_sendevents_option(InputInfoPtr pInfo,
+				     struct libinput_device *device)
+{
+	char *strmode;
+	enum libinput_config_send_events_mode mode;
+
+	if (libinput_device_config_send_events_get_modes(device) == LIBINPUT_CONFIG_SEND_EVENTS_ENABLED)
+		return LIBINPUT_CONFIG_SEND_EVENTS_ENABLED;
+
+	mode = libinput_device_config_send_events_get_mode(device);
+	strmode = xf86SetStrOption(pInfo->options,
+				   "SendEventsMode",
+				   NULL);
+	if (strmode) {
+		if (strcmp(strmode, "enabled") == 0)
+			mode = LIBINPUT_CONFIG_SEND_EVENTS_ENABLED;
+		else if (strcmp(strmode, "disabled") == 0)
+			mode = LIBINPUT_CONFIG_SEND_EVENTS_DISABLED;
+		else if (strcmp(strmode, "disabled-on-external-mouse") == 0)
+			mode = LIBINPUT_CONFIG_SEND_EVENTS_DISABLED_ON_EXTERNAL_MOUSE;
+		else
+			xf86IDrvMsg(pInfo, X_ERROR,
+				    "Invalid SendeventsMode: %s\n",
+				    strmode);
+		free(strmode);
+	}
+
+	if (libinput_device_config_send_events_set_mode(device, mode) !=
+	    LIBINPUT_CONFIG_STATUS_SUCCESS) {
+		xf86IDrvMsg(pInfo, X_ERROR,
+			    "Failed to set SendEventsMode %u\n", mode);
+		mode = libinput_device_config_send_events_get_mode(device);
+	}
+
+	return mode;
+}
+
+static inline void
+xf86libinput_parse_calibration_option(InputInfoPtr pInfo,
+				      struct libinput_device *device,
+				      float matrix_out[9])
+{
+	char *str;
+	float matrix[9] = { 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0};
+
+	memcpy(matrix_out, matrix, sizeof(matrix));
+
+	if (!libinput_device_config_calibration_has_matrix(device))
+		return;
+
+	libinput_device_config_calibration_get_matrix(device, matrix);
+	memcpy(matrix_out, matrix, sizeof(matrix));
+
+	if ((str = xf86CheckStrOption(pInfo->options,
+				      "CalibrationMatrix",
+				      NULL))) {
+		int num_calibration = sscanf(str, "%f %f %f %f %f %f %f %f %f ",
+					     &matrix[0], &matrix[1],
+					     &matrix[2], &matrix[3],
+					     &matrix[4], &matrix[5],
+					     &matrix[6], &matrix[7],
+					     &matrix[8]);
+		if (num_calibration != 9) {
+			xf86IDrvMsg(pInfo, X_ERROR,
+				    "Invalid matrix: %s, using default\n",  str);
+		} else if (libinput_device_config_calibration_set_matrix(device,
+									 matrix) ==
+			   LIBINPUT_CONFIG_STATUS_SUCCESS) {
+			memcpy(matrix_out, matrix, sizeof(matrix));
+		} else
+			xf86IDrvMsg(pInfo, X_ERROR,
+				    "Failed to apply matrix: %s, using default\n",  str);
+		free(str);
+	}
+}
+
+static inline BOOL
+xf86libinput_parse_lefthanded_option(InputInfoPtr pInfo,
+				     struct libinput_device *device)
+{
+	BOOL left_handed;
+
+	if (!libinput_device_config_left_handed_is_available(device))
+		return FALSE;
+
+	left_handed = xf86SetBoolOption(pInfo->options,
+					"LeftHanded",
+					libinput_device_config_left_handed_get(device));
+	if (libinput_device_config_left_handed_set(device,
+						   left_handed) !=
+	    LIBINPUT_CONFIG_STATUS_SUCCESS) {
+		xf86IDrvMsg(pInfo, X_ERROR,
+			    "Failed to set LeftHanded to %d\n",
+			    left_handed);
+		left_handed = libinput_device_config_left_handed_get(device);
+	}
+
+	return left_handed;
+}
+
+static inline enum libinput_config_scroll_method
+xf86libinput_parse_scroll_option(InputInfoPtr pInfo,
+				 struct libinput_device *device)
+{
+	uint32_t scroll_methods;
+	enum libinput_config_scroll_method m;
+	char *method;
+
+	scroll_methods = libinput_device_config_scroll_get_methods(device);
+	if (scroll_methods == LIBINPUT_CONFIG_SCROLL_NO_SCROLL)
+		return LIBINPUT_CONFIG_SCROLL_NO_SCROLL;
+
+	method = xf86SetStrOption(pInfo->options, "ScrollMethod", NULL);
+	if (!method)
+		m = libinput_device_config_scroll_get_method(device);
+	else if (strncasecmp(method, "twofinger", 9) == 0)
+		m = LIBINPUT_CONFIG_SCROLL_2FG;
+	else if (strncasecmp(method, "edge", 4) == 0)
+		m = LIBINPUT_CONFIG_SCROLL_EDGE;
+	else if (strncasecmp(method, "button", 6) == 0)
+		m = LIBINPUT_CONFIG_SCROLL_ON_BUTTON_DOWN;
+	else if (strncasecmp(method, "none", 4) == 0)
+		m = LIBINPUT_CONFIG_SCROLL_NO_SCROLL;
+	else {
+		xf86IDrvMsg(pInfo, X_ERROR,
+			    "Unknown scroll method '%s'. Using default.\n",
+			    method);
+		m = libinput_device_config_scroll_get_method(device);
+	}
+
+	free(method);
+	return m;
+}
+
+static inline unsigned int
+xf86libinput_parse_scrollbutton_option(InputInfoPtr pInfo,
+				       struct libinput_device *device)
+{
+	unsigned int b;
+	CARD32 scroll_button;
+
+	if ((libinput_device_config_scroll_get_methods(device) &
+	    LIBINPUT_CONFIG_SCROLL_ON_BUTTON_DOWN) == 0)
+		return 0;
+
+	b = btn_linux2xorg(libinput_device_config_scroll_get_button(device));
+	scroll_button = xf86SetIntOption(pInfo->options,
+					 "ScrollButton",
+					 b);
+
+	b = btn_xorg2linux(scroll_button);
+
+	if (libinput_device_config_scroll_set_button(device,
+						     b) != LIBINPUT_CONFIG_STATUS_SUCCESS) {
+		xf86IDrvMsg(pInfo, X_ERROR,
+			    "Failed to set ScrollButton to %u\n",
+			    scroll_button);
+		scroll_button = btn_linux2xorg(libinput_device_config_scroll_get_button(device));
+	}
+	return scroll_button;
+}
+
+static inline unsigned int
+xf86libinput_parse_clickmethod_option(InputInfoPtr pInfo,
+				      struct libinput_device *device)
+{
+	uint32_t click_methods = libinput_device_config_click_get_methods(device);
+	enum libinput_config_click_method m;
+	char *method;
+
+	if (click_methods == LIBINPUT_CONFIG_CLICK_METHOD_NONE)
+		return LIBINPUT_CONFIG_CLICK_METHOD_NONE;
+
+	method = xf86SetStrOption(pInfo->options, "ClickMethod", NULL);
+
+	if (!method)
+		m = libinput_device_config_click_get_method(device);
+	else if (strncasecmp(method, "buttonareas", 11) == 0)
+		m = LIBINPUT_CONFIG_CLICK_METHOD_BUTTON_AREAS;
+	else if (strncasecmp(method, "clickfinger", 11) == 0)
+		m = LIBINPUT_CONFIG_CLICK_METHOD_CLICKFINGER;
+	else if (strncasecmp(method, "none", 4) == 0)
+		m = LIBINPUT_CONFIG_CLICK_METHOD_NONE;
+	else {
+		xf86IDrvMsg(pInfo, X_ERROR,
+			    "Unknown click method '%s'. Using default.\n",
+			    method);
+		m = libinput_device_config_click_get_method(device);
+	}
+	free(method);
+
+	return m;
+}
+
+static inline BOOL
+xf86libinput_parse_middleemulation_option(InputInfoPtr pInfo,
+					  struct libinput_device *device)
+{
+	BOOL enabled;
+
+	if (!libinput_device_config_middle_emulation_is_available(device))
+		return FALSE;
+
+	enabled = xf86SetBoolOption(pInfo->options,
+				    "MiddleEmulation",
+				    libinput_device_config_middle_emulation_get_default_enabled(device));
+	if (libinput_device_config_middle_emulation_set_enabled(device, enabled) !=
+	    LIBINPUT_CONFIG_STATUS_SUCCESS) {
+		xf86IDrvMsg(pInfo, X_ERROR,
+			    "Failed to set MiddleEmulation to %d\n",
+			    enabled);
+		enabled = libinput_device_config_middle_emulation_get_enabled(device);
+	}
+
+	return enabled;
+}
+
+static void
+xf86libinput_parse_buttonmap_option(InputInfoPtr pInfo,
+				    unsigned char *btnmap,
+				    size_t size)
+{
+	const int MAXBUTTONS = 32;
+	char *mapping, *map, *s = NULL;
+	int idx = 1;
+
+	init_button_map(btnmap, size);
+
+	mapping = xf86SetStrOption(pInfo->options, "ButtonMapping", NULL);
+	if (!mapping)
+		return;
+
+	map = mapping;
+	do
+	{
+		unsigned long int btn = strtoul(map, &s, 10);
+
+		if (s == map || btn > MAXBUTTONS)
+		{
+			xf86IDrvMsg(pInfo, X_ERROR,
+				    "... Invalid button mapping. Using defaults\n");
+			init_button_map(btnmap, size);
+			break;
+		}
+
+		btnmap[idx++] = btn;
+		map = s;
+	} while (s && *s != '\0' && idx < MAXBUTTONS);
+
+	free(mapping);
+}
+
 static void
 xf86libinput_parse_options(InputInfoPtr pInfo,
 			   struct xf86libinput *driver_data,
 			   struct libinput_device *device)
 {
-	uint32_t scroll_methods;
+	struct options *options = &driver_data->options;
 
-	if (libinput_device_config_tap_get_finger_count(device) > 0) {
-		BOOL tap = xf86SetBoolOption(pInfo->options,
-					     "Tapping",
-					     libinput_device_config_tap_get_enabled(device));
-		if (libinput_device_config_tap_set_enabled(device, tap) !=
-		    LIBINPUT_CONFIG_STATUS_SUCCESS) {
-			xf86IDrvMsg(pInfo, X_ERROR,
-				    "Failed to set Tapping to %d\n",
-				    tap);
-			tap = libinput_device_config_tap_get_enabled(device);
-		}
-		driver_data->options.tapping = tap;
-	}
+	/* libinput options */
+	options->tapping = xf86libinput_parse_tap_option(pInfo, device);
+	options->speed = xf86libinput_parse_accel_option(pInfo, device);
+	options->natural_scrolling = xf86libinput_parse_natscroll_option(pInfo, device);
+	options->sendevents = xf86libinput_parse_sendevents_option(pInfo, device);
+	options->left_handed = xf86libinput_parse_lefthanded_option(pInfo, device);
+	options->scroll_method = xf86libinput_parse_scroll_option(pInfo, device);
+	options->scroll_button = xf86libinput_parse_scrollbutton_option(pInfo, device);
+	options->click_method = xf86libinput_parse_clickmethod_option(pInfo, device);
+	options->middle_emulation = xf86libinput_parse_middleemulation_option(pInfo, device);
+	xf86libinput_parse_calibration_option(pInfo, device, driver_data->options.matrix);
 
-	if (libinput_device_config_accel_is_available(device)) {
-		double speed = xf86SetRealOption(pInfo->options,
-						 "AccelSpeed",
-						 libinput_device_config_accel_get_speed(device));
-		if (libinput_device_config_accel_set_speed(device, speed) !=
-			    LIBINPUT_CONFIG_STATUS_SUCCESS) {
-			xf86IDrvMsg(pInfo, X_ERROR,
-				    "Invalid speed %.2f, using 0 instead\n",
-				    speed);
-			driver_data->options.speed = libinput_device_config_accel_get_speed(device);
-		}
-		driver_data->options.speed = speed;
-	}
-
-	if (libinput_device_config_scroll_has_natural_scroll(device)) {
-		BOOL natural_scroll = xf86SetBoolOption(pInfo->options,
-							"NaturalScrolling",
-							libinput_device_config_scroll_get_natural_scroll_enabled(device));
-		if (libinput_device_config_scroll_set_natural_scroll_enabled(device,
-									     natural_scroll) !=
-			    LIBINPUT_CONFIG_STATUS_SUCCESS) {
-			xf86IDrvMsg(pInfo, X_ERROR,
-				    "Failed to set NaturalScrolling to %d\n",
-				    natural_scroll);
-
-			natural_scroll = libinput_device_config_scroll_get_natural_scroll_enabled(device);
-		}
-		driver_data->options.natural_scrolling = natural_scroll;
-	}
-
-	if (libinput_device_config_send_events_get_modes(device) != LIBINPUT_CONFIG_SEND_EVENTS_ENABLED) {
-		char *strmode;
-		enum libinput_config_send_events_mode mode =
-			libinput_device_config_send_events_get_mode(device);
-
-		strmode = xf86SetStrOption(pInfo->options,
-					   "SendEventsMode",
-					   NULL);
-		if (strmode) {
-			if (strcmp(strmode, "enabled") == 0)
-				mode = LIBINPUT_CONFIG_SEND_EVENTS_ENABLED;
-			else if (strcmp(strmode, "disabled") == 0)
-				mode = LIBINPUT_CONFIG_SEND_EVENTS_DISABLED;
-			else if (strcmp(strmode, "disabled-on-external-mouse") == 0)
-				mode = LIBINPUT_CONFIG_SEND_EVENTS_DISABLED_ON_EXTERNAL_MOUSE;
-			else
-				xf86IDrvMsg(pInfo, X_ERROR,
-					    "Invalid SendeventsMode: %s\n",
-					    strmode);
-		}
-
-		if (libinput_device_config_send_events_set_mode(device, mode) !=
-		    LIBINPUT_CONFIG_STATUS_SUCCESS) {
-			xf86IDrvMsg(pInfo, X_ERROR,
-				    "Failed to set SendEventsMode %d\n", mode);
-			mode = libinput_device_config_send_events_get_mode(device);
-		}
-		driver_data->options.sendevents = mode;
-		free(strmode);
-	}
-
-	if (libinput_device_config_calibration_has_matrix(device)) {
-		char *str;
-		float matrix[9] = { 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0};
-
-		libinput_device_config_calibration_get_matrix(device,
-							      matrix);
-		memcpy(driver_data->options.matrix, matrix, sizeof(matrix));
-
-		if ((str = xf86CheckStrOption(pInfo->options,
-					      "CalibrationMatrix",
-					      NULL))) {
-		    int num_calibration = sscanf(str, "%f %f %f %f %f %f %f %f %f ",
-						 &matrix[0], &matrix[1],
-						 &matrix[2], &matrix[3],
-						 &matrix[4], &matrix[5],
-						 &matrix[6], &matrix[7],
-						 &matrix[8]);
-		    if (num_calibration != 9) {
-			    xf86IDrvMsg(pInfo, X_ERROR,
-					"Invalid matrix: %s, using default\n",  str);
-		    } else if (libinput_device_config_calibration_set_matrix(device,
-									     matrix) ==
-			       LIBINPUT_CONFIG_STATUS_SUCCESS) {
-			    memcpy(driver_data->options.matrix, matrix, sizeof(matrix));
-		    } else
-			    xf86IDrvMsg(pInfo, X_ERROR,
-					"Failed to apply matrix: %s, using default\n",  str);
-
-		    free(str);
-		}
-	}
-
-	if (libinput_device_config_left_handed_is_available(device)) {
-		BOOL left_handed = xf86SetBoolOption(pInfo->options,
-						     "LeftHanded",
-						     libinput_device_config_left_handed_get(device));
-		if (libinput_device_config_left_handed_set(device,
-							   left_handed) !=
-		    LIBINPUT_CONFIG_STATUS_SUCCESS) {
-			xf86IDrvMsg(pInfo, X_ERROR,
-				    "Failed to set LeftHanded to %d\n",
-				    left_handed);
-			left_handed = libinput_device_config_left_handed_get(device);
-		}
-		driver_data->options.left_handed = left_handed;
-	}
-
-	scroll_methods = libinput_device_config_scroll_get_methods(device);
-	if (scroll_methods != LIBINPUT_CONFIG_SCROLL_NO_SCROLL) {
-		enum libinput_config_scroll_method m;
-		char *method = xf86SetStrOption(pInfo->options,
-						"ScrollMethod",
-						NULL);
-
-		if (!method)
-			m = libinput_device_config_scroll_get_method(device);
-		else if (strncasecmp(method, "twofinger", 9) == 0)
-			m = LIBINPUT_CONFIG_SCROLL_2FG;
-		else if (strncasecmp(method, "edge", 4) == 0)
-			m = LIBINPUT_CONFIG_SCROLL_EDGE;
-		else if (strncasecmp(method, "button", 6) == 0)
-			m = LIBINPUT_CONFIG_SCROLL_ON_BUTTON_DOWN;
-		else if (strncasecmp(method, "none", 4) == 0)
-			m = LIBINPUT_CONFIG_SCROLL_NO_SCROLL;
-		else {
-			xf86IDrvMsg(pInfo, X_ERROR,
-				    "Unknown scroll method '%s'. Using default.\n",
-				    method);
-			m = libinput_device_config_scroll_get_method(device);
-		}
-
-		driver_data->options.scroll_method = m;
-		free(method);
-	}
-
-	if (libinput_device_config_scroll_get_methods(device) &
-	    LIBINPUT_CONFIG_SCROLL_ON_BUTTON_DOWN) {
-		unsigned int b = btn_linux2xorg(libinput_device_config_scroll_get_button(device));
-		CARD32 scroll_button = xf86SetIntOption(pInfo->options,
-							"ScrollButton",
-							b);
-
-		b = btn_xorg2linux(scroll_button);
-
-		if (libinput_device_config_scroll_set_button(device,
-							     b) != LIBINPUT_CONFIG_STATUS_SUCCESS) {
-			xf86IDrvMsg(pInfo, X_ERROR,
-				    "Failed to set ScrollButton to %d\n",
-				    scroll_button);
-			scroll_button = btn_linux2xorg(libinput_device_config_scroll_get_button(device));
-		}
-		driver_data->options.scroll_button = scroll_button;
-	}
-
+	/* non-libinput options */
+	xf86libinput_parse_buttonmap_option(pInfo,
+					    options->btnmap,
+					    sizeof(options->btnmap));
 }
 
-static int xf86libinput_pre_init(InputDriverPtr drv,
-				 InputInfoPtr pInfo,
-				 int flags)
+static int
+xf86libinput_pre_init(InputDriverPtr drv,
+		      InputInfoPtr pInfo,
+		      int flags)
 {
 	struct xf86libinput *driver_data = NULL;
         struct libinput *libinput = NULL;
 	struct libinput_device *device;
-	char *path;
+	char *path = NULL;
 
 	pInfo->type_name = 0;
 	pInfo->device_control = xf86libinput_device_control;
@@ -1138,8 +1382,12 @@ static int xf86libinput_pre_init(InputDriverPtr drv,
 	if (!driver_data->valuators)
 		goto fail;
 
-	driver_data->scroll_vdist = 1;
-	driver_data->scroll_hdist = 1;
+	driver_data->valuators_unaccelerated = valuator_mask_new(2);
+	if (!driver_data->valuators_unaccelerated)
+		goto fail;
+
+	driver_data->scroll.vdist = 15;
+	driver_data->scroll.hdist = 15;
 
 	path = xf86SetStrOption(pInfo->options, "Device", NULL);
 	if (!path)
@@ -1209,6 +1457,8 @@ fail:
 		fd_pop(&driver_context, pInfo->fd);
 	if (driver_data->valuators)
 		valuator_mask_free(&driver_data->valuators);
+	if (driver_data->valuators_unaccelerated)
+		valuator_mask_free(&driver_data->valuators_unaccelerated);
 	free(path);
 	free(driver_data);
 	return BadValue;
@@ -1272,20 +1522,53 @@ _X_EXPORT XF86ModuleData libinputModuleData = {
 
 /* libinput-specific properties */
 static Atom prop_tap;
+static Atom prop_tap_default;
 static Atom prop_calibration;
+static Atom prop_calibration_default;
 static Atom prop_accel;
+static Atom prop_accel_default;
 static Atom prop_natural_scroll;
+static Atom prop_natural_scroll_default;
 static Atom prop_sendevents_available;
 static Atom prop_sendevents_enabled;
+static Atom prop_sendevents_default;
 static Atom prop_left_handed;
+static Atom prop_left_handed_default;
 static Atom prop_scroll_methods_available;
 static Atom prop_scroll_method_enabled;
+static Atom prop_scroll_method_default;
 static Atom prop_scroll_button;
+static Atom prop_scroll_button_default;
+static Atom prop_click_methods_available;
+static Atom prop_click_method_enabled;
+static Atom prop_click_method_default;
+static Atom prop_middle_emulation;
+static Atom prop_middle_emulation_default;
 
 /* general properties */
 static Atom prop_float;
 static Atom prop_device;
 static Atom prop_product_id;
+
+static inline BOOL
+xf86libinput_check_device (DeviceIntPtr dev,
+			   Atom atom)
+{
+	InputInfoPtr pInfo = dev->public.devicePrivate;
+	struct xf86libinput *driver_data = pInfo->private;
+	struct libinput_device *device = driver_data->device;
+
+	if (device == NULL) {
+		BUG_WARN(dev->public.on);
+		xf86IDrvMsg(pInfo, X_INFO,
+			    "SetProperty on %u called but device is disabled.\n"
+			    "This driver cannot change properties on a disabled device\n",
+			    atom);
+		return FALSE;
+	}
+
+	return TRUE;
+}
 
 static inline int
 LibinputSetPropertyTap(DeviceIntPtr dev,
@@ -1305,6 +1588,9 @@ LibinputSetPropertyTap(DeviceIntPtr dev,
 	if (checkonly) {
 		if (*data != 0 && *data != 1)
 			return BadValue;
+
+		if (!xf86libinput_check_device (dev, atom))
+			return BadMatch;
 
 		if (libinput_device_config_tap_get_finger_count(device) == 0)
 			return BadMatch;
@@ -1337,6 +1623,9 @@ LibinputSetPropertyCalibration(DeviceIntPtr dev,
 		    data[8] != 1)
 			return BadValue;
 
+		if (!xf86libinput_check_device (dev, atom))
+			return BadMatch;
+
 		if (!libinput_device_config_calibration_has_matrix(device))
 			return BadMatch;
 	} else {
@@ -1368,6 +1657,9 @@ LibinputSetPropertyAccel(DeviceIntPtr dev,
 		if (*data < -1 || *data > 1)
 			return BadValue;
 
+		if (!xf86libinput_check_device (dev, atom))
+			return BadMatch;
+
 		if (libinput_device_config_accel_is_available(device) == 0)
 			return BadMatch;
 	} else {
@@ -1396,6 +1688,9 @@ LibinputSetPropertyNaturalScroll(DeviceIntPtr dev,
 	if (checkonly) {
 		if (*data != 0 && *data != 1)
 			return BadValue;
+
+		if (!xf86libinput_check_device (dev, atom))
+			return BadMatch;
 
 		if (libinput_device_config_scroll_has_natural_scroll(device) == 0)
 			return BadMatch;
@@ -1429,9 +1724,12 @@ LibinputSetPropertySendEvents(DeviceIntPtr dev,
 		modes |= LIBINPUT_CONFIG_SEND_EVENTS_DISABLED_ON_EXTERNAL_MOUSE;
 
 	if (checkonly) {
-		uint32_t supported =
-			libinput_device_config_send_events_get_modes(device);
+		uint32_t supported;
 
+		if (!xf86libinput_check_device (dev, atom))
+			return BadMatch;
+
+		supported = libinput_device_config_send_events_get_modes(device);
 		if ((modes | supported) != supported)
 			return BadValue;
 
@@ -1459,9 +1757,13 @@ LibinputSetPropertyLeftHanded(DeviceIntPtr dev,
 	data = (BOOL*)val->data;
 
 	if (checkonly) {
-		int supported = libinput_device_config_left_handed_is_available(device);
+		int supported;
 		int left_handed = *data;
 
+		if (!xf86libinput_check_device (dev, atom))
+			return BadMatch;
+
+		supported = libinput_device_config_left_handed_is_available(device);
 		if (!supported && left_handed)
 			return BadValue;
 	} else {
@@ -1496,11 +1798,15 @@ LibinputSetPropertyScrollMethods(DeviceIntPtr dev,
 		modes |= LIBINPUT_CONFIG_SCROLL_ON_BUTTON_DOWN;
 
 	if (checkonly) {
-		uint32_t supported = libinput_device_config_scroll_get_methods(device);
+		uint32_t supported;
 
 		if (__builtin_popcount(modes) > 1)
 			return BadValue;
 
+		if (!xf86libinput_check_device (dev, atom))
+			return BadMatch;
+
+		supported = libinput_device_config_scroll_get_methods(device);
 		if (modes && (modes & supported) == 0)
 			return BadValue;
 	} else {
@@ -1528,13 +1834,89 @@ LibinputSetPropertyScrollButton(DeviceIntPtr dev,
 
 	if (checkonly) {
 		uint32_t button = *data;
-		uint32_t supported = libinput_device_has_button(device,
-								btn_xorg2linux(button));
+		uint32_t supported;
 
+		if (!xf86libinput_check_device (dev, atom))
+			return BadMatch;
+
+		supported = libinput_device_pointer_has_button(device,
+							       btn_xorg2linux(button));
 		if (button && !supported)
 			return BadValue;
 	} else {
 		driver_data->options.scroll_button = *data;
+	}
+
+	return Success;
+}
+
+static inline int
+LibinputSetPropertyClickMethod(DeviceIntPtr dev,
+			       Atom atom,
+			       XIPropertyValuePtr val,
+			       BOOL checkonly)
+{
+	InputInfoPtr pInfo = dev->public.devicePrivate;
+	struct xf86libinput *driver_data = pInfo->private;
+	struct libinput_device *device = driver_data->device;
+	BOOL* data;
+	uint32_t modes = 0;
+
+	if (val->format != 8 || val->size != 2 || val->type != XA_INTEGER)
+		return BadMatch;
+
+	data = (BOOL*)val->data;
+
+	if (data[0])
+		modes |= LIBINPUT_CONFIG_CLICK_METHOD_BUTTON_AREAS;
+	if (data[1])
+		modes |= LIBINPUT_CONFIG_CLICK_METHOD_CLICKFINGER;
+
+	if (checkonly) {
+		uint32_t supported;
+
+		if (__builtin_popcount(modes) > 1)
+			return BadValue;
+
+		if (!xf86libinput_check_device(dev, atom))
+			return BadMatch;
+
+		supported = libinput_device_config_click_get_methods(device);
+		if (modes && (modes & supported) == 0)
+			return BadValue;
+	} else {
+		driver_data->options.click_method = modes;
+	}
+
+	return Success;
+}
+
+static inline int
+LibinputSetPropertyMiddleEmulation(DeviceIntPtr dev,
+				   Atom atom,
+				   XIPropertyValuePtr val,
+				   BOOL checkonly)
+{
+	InputInfoPtr pInfo = dev->public.devicePrivate;
+	struct xf86libinput *driver_data = pInfo->private;
+	struct libinput_device *device = driver_data->device;
+	BOOL* data;
+
+	if (val->format != 8 || val->size != 1 || val->type != XA_INTEGER)
+		return BadMatch;
+
+	data = (BOOL*)val->data;
+	if (checkonly) {
+		if (*data != 0 && *data != 1)
+			return BadValue;
+
+		if (!xf86libinput_check_device(dev, atom))
+			return BadMatch;
+
+		if (!libinput_device_config_middle_emulation_is_available(device))
+			return BadMatch;
+	} else {
+		driver_data->options.middle_emulation = *data;
 	}
 
 	return Success;
@@ -1567,7 +1949,23 @@ LibinputSetProperty(DeviceIntPtr dev, Atom atom, XIPropertyValuePtr val,
 		rc = LibinputSetPropertyScrollMethods(dev, atom, val, checkonly);
 	else if (atom == prop_scroll_button)
 		rc = LibinputSetPropertyScrollButton(dev, atom, val, checkonly);
-	else if (atom == prop_device || atom == prop_product_id)
+	else if (atom == prop_click_methods_available)
+		return BadAccess; /* read-only */
+	else if (atom == prop_click_method_enabled)
+		rc = LibinputSetPropertyClickMethod(dev, atom, val, checkonly);
+	else if (atom == prop_middle_emulation)
+		rc = LibinputSetPropertyMiddleEmulation(dev, atom, val, checkonly);
+	else if (atom == prop_device || atom == prop_product_id ||
+		 atom == prop_tap_default ||
+		 atom == prop_calibration_default ||
+		 atom == prop_accel_default ||
+		 atom == prop_natural_scroll_default ||
+		 atom == prop_sendevents_default ||
+		 atom == prop_left_handed_default ||
+		 atom == prop_scroll_method_default ||
+		 atom == prop_scroll_button_default ||
+		 atom == prop_click_method_default ||
+		 atom == prop_middle_emulation_default)
 		return BadAccess; /* read-only */
 	else
 		return Success;
@@ -1578,6 +1976,400 @@ LibinputSetProperty(DeviceIntPtr dev, Atom atom, XIPropertyValuePtr val,
 	return rc;
 }
 
+static Atom
+LibinputMakeProperty(DeviceIntPtr dev,
+		     const char *prop_name,
+		     Atom type,
+		     int format,
+		     int len,
+		     void *data)
+{
+	int rc;
+	Atom prop = MakeAtom(prop_name, strlen(prop_name), TRUE);
+
+	rc = XIChangeDeviceProperty(dev, prop, type, format,
+				    PropModeReplace,
+				    len, data, FALSE);
+	if (rc != Success)
+		return None;
+
+	XISetDevicePropertyDeletable(dev, prop, FALSE);
+
+	return prop;
+}
+
+static void
+LibinputInitTapProperty(DeviceIntPtr dev,
+			struct xf86libinput *driver_data,
+			struct libinput_device *device)
+{
+	BOOL tap = driver_data->options.tapping;
+
+	if (libinput_device_config_tap_get_finger_count(device) == 0)
+		return;
+
+	prop_tap = LibinputMakeProperty(dev,
+					LIBINPUT_PROP_TAP,
+					XA_INTEGER,
+					8,
+					1,
+					&tap);
+	if (!prop_tap)
+		return;
+
+	tap = libinput_device_config_tap_get_default_enabled(device);
+	prop_tap_default = LibinputMakeProperty(dev,
+						LIBINPUT_PROP_TAP_DEFAULT,
+						XA_INTEGER, 8,
+						1, &tap);
+}
+
+static void
+LibinputInitCalibrationProperty(DeviceIntPtr dev,
+				struct xf86libinput *driver_data,
+				struct libinput_device *device)
+{
+	float calibration[9];
+
+	if (!libinput_device_config_calibration_has_matrix(device))
+		return;
+
+	/* We use a 9-element matrix just to be closer to the X server's
+	   transformation matrix which also has the full matrix */
+
+	libinput_device_config_calibration_get_matrix(device, calibration);
+	calibration[6] = 0;
+	calibration[7] = 0;
+	calibration[8] = 1;
+
+	prop_calibration = LibinputMakeProperty(dev,
+						LIBINPUT_PROP_CALIBRATION,
+						prop_float, 32,
+						9, calibration);
+	if (!prop_calibration)
+		return;
+
+	libinput_device_config_calibration_get_default_matrix(device,
+							      calibration);
+
+	prop_calibration_default = LibinputMakeProperty(dev,
+							LIBINPUT_PROP_CALIBRATION_DEFAULT,
+							prop_float, 32,
+							9, calibration);
+}
+
+static void
+LibinputInitAccelProperty(DeviceIntPtr dev,
+			  struct xf86libinput *driver_data,
+			  struct libinput_device *device)
+{
+	float speed = driver_data->options.speed;
+
+	if (!libinput_device_config_accel_is_available(device))
+		return;
+
+	prop_accel = LibinputMakeProperty(dev,
+					  LIBINPUT_PROP_ACCEL,
+					  prop_float, 32,
+					  1, &speed);
+	if (!prop_accel)
+		return;
+
+	speed = libinput_device_config_accel_get_default_speed(device);
+	prop_accel_default = LibinputMakeProperty(dev,
+						  LIBINPUT_PROP_ACCEL_DEFAULT,
+						  prop_float, 32,
+						  1, &speed);
+}
+
+static void
+LibinputInitNaturalScrollProperty(DeviceIntPtr dev,
+				  struct xf86libinput *driver_data,
+				  struct libinput_device *device)
+{
+	BOOL natural_scroll = driver_data->options.natural_scrolling;
+
+	if (!libinput_device_config_scroll_has_natural_scroll(device))
+		return;
+
+	prop_natural_scroll = LibinputMakeProperty(dev,
+						   LIBINPUT_PROP_NATURAL_SCROLL,
+						   XA_INTEGER, 8,
+						   1, &natural_scroll);
+	if (!prop_natural_scroll)
+		return;
+
+	natural_scroll = libinput_device_config_scroll_get_default_natural_scroll_enabled(device);
+	prop_natural_scroll_default = LibinputMakeProperty(dev,
+							   LIBINPUT_PROP_NATURAL_SCROLL_DEFAULT,
+							   XA_INTEGER, 8,
+							   1, &natural_scroll);
+}
+
+static void
+LibinputInitSendEventsProperty(DeviceIntPtr dev,
+			       struct xf86libinput *driver_data,
+			       struct libinput_device *device)
+{
+	uint32_t sendevent_modes;
+	uint32_t sendevents;
+	BOOL modes[2] = {FALSE};
+
+	sendevent_modes = libinput_device_config_send_events_get_modes(device);
+	if (sendevent_modes == LIBINPUT_CONFIG_SEND_EVENTS_ENABLED)
+		return;
+
+	if (sendevent_modes & LIBINPUT_CONFIG_SEND_EVENTS_DISABLED)
+		modes[0] = TRUE;
+	if (sendevent_modes & LIBINPUT_CONFIG_SEND_EVENTS_DISABLED_ON_EXTERNAL_MOUSE)
+		modes[1] = TRUE;
+
+	prop_sendevents_available = LibinputMakeProperty(dev,
+							 LIBINPUT_PROP_SENDEVENTS_AVAILABLE,
+							 XA_INTEGER, 8,
+							 2, modes);
+	if (!prop_sendevents_available)
+		return;
+
+	memset(modes, 0, sizeof(modes));
+	sendevents = driver_data->options.sendevents;
+
+	switch(sendevents) {
+	case LIBINPUT_CONFIG_SEND_EVENTS_DISABLED:
+		modes[0] = TRUE;
+		break;
+	case LIBINPUT_CONFIG_SEND_EVENTS_DISABLED_ON_EXTERNAL_MOUSE:
+		modes[1] = TRUE;
+		break;
+	}
+
+	prop_sendevents_enabled = LibinputMakeProperty(dev,
+						       LIBINPUT_PROP_SENDEVENTS_ENABLED,
+						       XA_INTEGER, 8,
+						       2, modes);
+
+	if (!prop_sendevents_enabled)
+		return;
+
+	memset(modes, 0, sizeof(modes));
+	sendevent_modes = libinput_device_config_send_events_get_default_mode(device);
+	if (sendevent_modes & LIBINPUT_CONFIG_SEND_EVENTS_DISABLED)
+		modes[0] = TRUE;
+	if (sendevent_modes & LIBINPUT_CONFIG_SEND_EVENTS_DISABLED_ON_EXTERNAL_MOUSE)
+		modes[1] = TRUE;
+
+	prop_sendevents_default = LibinputMakeProperty(dev,
+						       LIBINPUT_PROP_SENDEVENTS_ENABLED_DEFAULT,
+						       XA_INTEGER, 8,
+						       2, modes);
+}
+
+static void
+LibinputInitLeftHandedProperty(DeviceIntPtr dev,
+			       struct xf86libinput *driver_data,
+			       struct libinput_device *device)
+{
+	BOOL left_handed = driver_data->options.left_handed;
+
+	if (!libinput_device_config_left_handed_is_available(device))
+		return;
+
+	prop_left_handed = LibinputMakeProperty(dev,
+						LIBINPUT_PROP_LEFT_HANDED,
+						XA_INTEGER, 8,
+						1, &left_handed);
+	if (!prop_left_handed)
+		return;
+
+	left_handed = libinput_device_config_left_handed_get_default(device);
+	prop_left_handed_default = LibinputMakeProperty(dev,
+							LIBINPUT_PROP_LEFT_HANDED_DEFAULT,
+							XA_INTEGER, 8,
+							1, &left_handed);
+}
+
+static void
+LibinputInitScrollMethodsProperty(DeviceIntPtr dev,
+				  struct xf86libinput *driver_data,
+				  struct libinput_device *device)
+{
+	uint32_t scroll_methods;
+	enum libinput_config_scroll_method method;
+	BOOL methods[3] = {FALSE};
+
+	scroll_methods = libinput_device_config_scroll_get_methods(device);
+	if (scroll_methods == LIBINPUT_CONFIG_SCROLL_NO_SCROLL)
+		return;
+
+	if (scroll_methods & LIBINPUT_CONFIG_SCROLL_2FG)
+		methods[0] = TRUE;
+	if (scroll_methods & LIBINPUT_CONFIG_SCROLL_EDGE)
+		methods[1] = TRUE;
+	if (scroll_methods & LIBINPUT_CONFIG_SCROLL_ON_BUTTON_DOWN)
+		methods[2] = TRUE;
+
+	prop_scroll_methods_available = LibinputMakeProperty(dev,
+							     LIBINPUT_PROP_SCROLL_METHODS_AVAILABLE,
+							     XA_INTEGER, 8,
+							     ARRAY_SIZE(methods),
+							     &methods);
+	if (!prop_scroll_methods_available)
+		return;
+
+	memset(methods, 0, sizeof(methods));
+
+	method = libinput_device_config_scroll_get_method(device);
+	switch(method) {
+	case LIBINPUT_CONFIG_SCROLL_2FG:
+		methods[0] = TRUE;
+		break;
+	case LIBINPUT_CONFIG_SCROLL_EDGE:
+		methods[1] = TRUE;
+		break;
+	case LIBINPUT_CONFIG_SCROLL_ON_BUTTON_DOWN:
+		methods[2] = TRUE;
+		break;
+	default:
+		break;
+	}
+
+	prop_scroll_method_enabled = LibinputMakeProperty(dev,
+							  LIBINPUT_PROP_SCROLL_METHOD_ENABLED,
+							  XA_INTEGER, 8,
+							  ARRAY_SIZE(methods),
+							  &methods);
+	if (!prop_scroll_method_enabled)
+		return;
+
+	scroll_methods = libinput_device_config_scroll_get_default_method(device);
+	if (scroll_methods & LIBINPUT_CONFIG_SCROLL_2FG)
+		methods[0] = TRUE;
+	if (scroll_methods & LIBINPUT_CONFIG_SCROLL_EDGE)
+		methods[1] = TRUE;
+	if (scroll_methods & LIBINPUT_CONFIG_SCROLL_ON_BUTTON_DOWN)
+		methods[2] = TRUE;
+
+	prop_scroll_method_default = LibinputMakeProperty(dev,
+							  LIBINPUT_PROP_SCROLL_METHOD_ENABLED_DEFAULT,
+							  XA_INTEGER, 8,
+							  ARRAY_SIZE(methods),
+							  &methods);
+	/* Scroll button */
+	if (libinput_device_config_scroll_get_methods(device) &
+	    LIBINPUT_CONFIG_SCROLL_ON_BUTTON_DOWN) {
+		CARD32 scroll_button = driver_data->options.scroll_button;
+
+		prop_scroll_button = LibinputMakeProperty(dev,
+							  LIBINPUT_PROP_SCROLL_BUTTON,
+							  XA_CARDINAL, 32,
+							  1, &scroll_button);
+		if (!prop_scroll_button)
+			return;
+
+		scroll_button = libinput_device_config_scroll_get_default_button(device);
+		prop_scroll_button_default = LibinputMakeProperty(dev,
+								  LIBINPUT_PROP_SCROLL_BUTTON_DEFAULT,
+								  XA_CARDINAL, 32,
+								  1, &scroll_button);
+	}
+}
+
+static void
+LibinputInitClickMethodsProperty(DeviceIntPtr dev,
+				 struct xf86libinput *driver_data,
+				 struct libinput_device *device)
+{
+	uint32_t click_methods;
+	enum libinput_config_click_method method;
+	BOOL methods[2] = {FALSE};
+
+	click_methods = libinput_device_config_click_get_methods(device);
+	if (click_methods == LIBINPUT_CONFIG_CLICK_METHOD_NONE)
+		return;
+
+	if (click_methods & LIBINPUT_CONFIG_CLICK_METHOD_BUTTON_AREAS)
+		methods[0] = TRUE;
+	if (click_methods & LIBINPUT_CONFIG_CLICK_METHOD_CLICKFINGER)
+		methods[1] = TRUE;
+
+	prop_click_methods_available = LibinputMakeProperty(dev,
+							    LIBINPUT_PROP_CLICK_METHODS_AVAILABLE,
+							    XA_INTEGER, 8,
+							    ARRAY_SIZE(methods),
+							    &methods);
+	if (!prop_click_methods_available)
+		return;
+
+	memset(methods, 0, sizeof(methods));
+
+	method = libinput_device_config_click_get_method(device);
+	switch(method) {
+	case LIBINPUT_CONFIG_CLICK_METHOD_BUTTON_AREAS:
+		methods[0] = TRUE;
+		break;
+	case LIBINPUT_CONFIG_CLICK_METHOD_CLICKFINGER:
+		methods[1] = TRUE;
+		break;
+	default:
+		break;
+	}
+
+	prop_click_method_enabled = LibinputMakeProperty(dev,
+							 LIBINPUT_PROP_CLICK_METHOD_ENABLED,
+							 XA_INTEGER, 8,
+							 ARRAY_SIZE(methods),
+							 &methods);
+
+	if (!prop_click_method_enabled)
+		return;
+
+	memset(methods, 0, sizeof(methods));
+
+	method = libinput_device_config_click_get_default_method(device);
+	switch(method) {
+	case LIBINPUT_CONFIG_CLICK_METHOD_BUTTON_AREAS:
+		methods[0] = TRUE;
+		break;
+	case LIBINPUT_CONFIG_CLICK_METHOD_CLICKFINGER:
+		methods[1] = TRUE;
+		break;
+	default:
+		break;
+	}
+
+	prop_click_method_default = LibinputMakeProperty(dev,
+							 LIBINPUT_PROP_CLICK_METHOD_ENABLED_DEFAULT,
+							 XA_INTEGER, 8,
+							 ARRAY_SIZE(methods),
+							 &methods);
+}
+
+static void
+LibinputInitMiddleEmulationProperty(DeviceIntPtr dev,
+				    struct xf86libinput *driver_data,
+				    struct libinput_device *device)
+{
+	BOOL middle = driver_data->options.middle_emulation;
+
+	if (!libinput_device_config_middle_emulation_is_available(device))
+		return;
+
+	prop_middle_emulation = LibinputMakeProperty(dev,
+						     LIBINPUT_PROP_MIDDLE_EMULATION_ENABLED,
+						     XA_INTEGER,
+						     8,
+						     1,
+						     &middle);
+	if (!prop_middle_emulation)
+		return;
+
+	middle = libinput_device_config_middle_emulation_get_default_enabled(device);
+	prop_middle_emulation_default = LibinputMakeProperty(dev,
+							     LIBINPUT_PROP_MIDDLE_EMULATION_ENABLED_DEFAULT,
+							     XA_INTEGER, 8,
+							     1, &middle);
+}
+
 static void
 LibinputInitProperty(DeviceIntPtr dev)
 {
@@ -1586,204 +2378,19 @@ LibinputInitProperty(DeviceIntPtr dev)
 	struct libinput_device *device = driver_data->device;
 	const char *device_node;
 	CARD32 product[2];
-	uint32_t scroll_methods;
-	uint32_t sendevent_modes;
 	int rc;
 
 	prop_float = XIGetKnownProperty("FLOAT");
 
-	if (libinput_device_config_tap_get_finger_count(device) > 0) {
-		BOOL tap = driver_data->options.tapping;
-
-		prop_tap = MakeAtom(LIBINPUT_PROP_TAP, strlen(LIBINPUT_PROP_TAP), TRUE);
-		rc = XIChangeDeviceProperty(dev, prop_tap, XA_INTEGER, 8,
-					    PropModeReplace, 1, &tap, FALSE);
-		if (rc != Success)
-			return;
-		XISetDevicePropertyDeletable(dev, prop_tap, FALSE);
-	}
-
-	/* We use a 9-element matrix just to be closer to the X server's
-	   transformation matrix which also has the full matrix */
-	if (libinput_device_config_calibration_has_matrix(device)) {
-		float calibration[9];
-
-		libinput_device_config_calibration_get_matrix(device, calibration);
-		calibration[6] = 0;
-		calibration[7] = 0;
-		calibration[8] = 1;
-
-		prop_calibration = MakeAtom(LIBINPUT_PROP_CALIBRATION,
-					    strlen(LIBINPUT_PROP_CALIBRATION),
-					    TRUE);
-
-		rc = XIChangeDeviceProperty(dev, prop_calibration, prop_float, 32,
-					    PropModeReplace, 9, calibration, FALSE);
-		if (rc != Success)
-			return;
-		XISetDevicePropertyDeletable(dev, prop_calibration, FALSE);
-	}
-
-	if (libinput_device_config_accel_is_available(device)) {
-		float speed = driver_data->options.speed;
-
-		prop_accel = MakeAtom(LIBINPUT_PROP_ACCEL, strlen(LIBINPUT_PROP_ACCEL), TRUE);
-		rc = XIChangeDeviceProperty(dev, prop_accel, prop_float, 32,
-					    PropModeReplace, 1, &speed, FALSE);
-		if (rc != Success)
-			return;
-		XISetDevicePropertyDeletable(dev, prop_accel, FALSE);
-	}
-
-	if (libinput_device_config_scroll_has_natural_scroll(device)) {
-		BOOL natural_scroll = driver_data->options.natural_scrolling;
-
-		prop_natural_scroll = MakeAtom(LIBINPUT_PROP_NATURAL_SCROLL,
-					       strlen(LIBINPUT_PROP_NATURAL_SCROLL),
-					       TRUE);
-		rc = XIChangeDeviceProperty(dev, prop_natural_scroll, XA_INTEGER, 8,
-					    PropModeReplace, 1, &natural_scroll, FALSE);
-		if (rc != Success)
-			return;
-		XISetDevicePropertyDeletable(dev, prop_natural_scroll, FALSE);
-	}
-
-	sendevent_modes = libinput_device_config_send_events_get_modes(device);
-	if (sendevent_modes != LIBINPUT_CONFIG_SEND_EVENTS_ENABLED) {
-		uint32_t sendevents;
-		BOOL modes[2] = {FALSE};
-
-		if (sendevent_modes & LIBINPUT_CONFIG_SEND_EVENTS_DISABLED)
-			modes[0] = TRUE;
-		if (sendevent_modes & LIBINPUT_CONFIG_SEND_EVENTS_DISABLED_ON_EXTERNAL_MOUSE)
-			modes[1] = TRUE;
-
-		prop_sendevents_available = MakeAtom(LIBINPUT_PROP_SENDEVENTS_AVAILABLE,
-						     strlen(LIBINPUT_PROP_SENDEVENTS_AVAILABLE),
-						     TRUE);
-		rc = XIChangeDeviceProperty(dev, prop_sendevents_available,
-					    XA_INTEGER, 8,
-					    PropModeReplace, 2, modes, FALSE);
-		if (rc != Success)
-			return;
-		XISetDevicePropertyDeletable(dev, prop_sendevents_available, FALSE);
-
-		memset(modes, 0, sizeof(modes));
-		sendevents = driver_data->options.sendevents;
-
-		switch(sendevents) {
-		case LIBINPUT_CONFIG_SEND_EVENTS_DISABLED:
-			modes[0] = TRUE;
-			break;
-		case LIBINPUT_CONFIG_SEND_EVENTS_DISABLED_ON_EXTERNAL_MOUSE:
-			modes[1] = TRUE;
-			break;
-		}
-
-		prop_sendevents_enabled = MakeAtom(LIBINPUT_PROP_SENDEVENTS_ENABLED,
-						   strlen(LIBINPUT_PROP_SENDEVENTS_ENABLED),
-						   TRUE);
-		rc = XIChangeDeviceProperty(dev, prop_sendevents_enabled,
-					    XA_INTEGER, 8,
-					    PropModeReplace, 2, modes, FALSE);
-		if (rc != Success)
-			return;
-		XISetDevicePropertyDeletable(dev, prop_sendevents_enabled, FALSE);
-
-	}
-
-	if (libinput_device_config_left_handed_is_available(device)) {
-		BOOL left_handed = driver_data->options.left_handed;
-
-		prop_left_handed = MakeAtom(LIBINPUT_PROP_LEFT_HANDED,
-					    strlen(LIBINPUT_PROP_LEFT_HANDED),
-					    TRUE);
-		rc = XIChangeDeviceProperty(dev, prop_left_handed,
-					    XA_INTEGER, 8,
-					    PropModeReplace, 1, &left_handed, FALSE);
-		if (rc != Success)
-			return;
-		XISetDevicePropertyDeletable(dev, prop_left_handed, FALSE);
-	}
-
-	scroll_methods = libinput_device_config_scroll_get_methods(device);
-	if (scroll_methods != LIBINPUT_CONFIG_SCROLL_NO_SCROLL) {
-		enum libinput_config_scroll_method method;
-		BOOL methods[3] = {FALSE};
-
-		if (scroll_methods & LIBINPUT_CONFIG_SCROLL_2FG)
-			methods[0] = TRUE;
-		if (scroll_methods & LIBINPUT_CONFIG_SCROLL_EDGE)
-			methods[1] = TRUE;
-		if (scroll_methods & LIBINPUT_CONFIG_SCROLL_ON_BUTTON_DOWN)
-			methods[2] = TRUE;
-
-		prop_scroll_methods_available =
-			MakeAtom(LIBINPUT_PROP_SCROLL_METHODS_AVAILABLE,
-				 strlen(LIBINPUT_PROP_SCROLL_METHODS_AVAILABLE),
-				 TRUE);
-		rc = XIChangeDeviceProperty(dev,
-					    prop_scroll_methods_available,
-					    XA_INTEGER, 8,
-					    PropModeReplace,
-					    ARRAY_SIZE(methods),
-					    &methods, FALSE);
-		if (rc != Success)
-			return;
-		XISetDevicePropertyDeletable(dev,
-					     prop_scroll_methods_available,
-					     FALSE);
-
-		memset(methods, 0, sizeof(methods));
-
-		method = libinput_device_config_scroll_get_method(device);
-		switch(method) {
-		case LIBINPUT_CONFIG_SCROLL_2FG:
-			methods[0] = TRUE;
-			break;
-		case LIBINPUT_CONFIG_SCROLL_EDGE:
-			methods[1] = TRUE;
-			break;
-		case LIBINPUT_CONFIG_SCROLL_ON_BUTTON_DOWN:
-			methods[2] = TRUE;
-			break;
-		default:
-			break;
-		}
-
-		prop_scroll_method_enabled =
-			MakeAtom(LIBINPUT_PROP_SCROLL_METHOD_ENABLED,
-				 strlen(LIBINPUT_PROP_SCROLL_METHOD_ENABLED),
-				 TRUE);
-		rc = XIChangeDeviceProperty(dev,
-					    prop_scroll_method_enabled,
-					    XA_INTEGER, 8,
-					    PropModeReplace,
-					    ARRAY_SIZE(methods),
-					    &methods, FALSE);
-		if (rc != Success)
-			return;
-
-		XISetDevicePropertyDeletable(dev,
-					     prop_scroll_method_enabled,
-					     FALSE);
-	}
-
-	if (libinput_device_config_scroll_get_methods(device) &
-	    LIBINPUT_CONFIG_SCROLL_ON_BUTTON_DOWN) {
-		CARD32 scroll_button = driver_data->options.scroll_button;
-
-		prop_scroll_button = MakeAtom(LIBINPUT_PROP_SCROLL_BUTTON,
-					    strlen(LIBINPUT_PROP_SCROLL_BUTTON),
-					    TRUE);
-		rc = XIChangeDeviceProperty(dev, prop_scroll_button,
-					    XA_CARDINAL, 32,
-					    PropModeReplace, 1,
-					    &scroll_button, FALSE);
-		if (rc != Success)
-			return;
-		XISetDevicePropertyDeletable(dev, prop_scroll_button, FALSE);
-	}
+	LibinputInitTapProperty(dev, driver_data, device);
+	LibinputInitCalibrationProperty(dev, driver_data, device);
+	LibinputInitAccelProperty(dev, driver_data, device);
+	LibinputInitNaturalScrollProperty(dev, driver_data, device);
+	LibinputInitSendEventsProperty(dev, driver_data, device);
+	LibinputInitLeftHandedProperty(dev, driver_data, device);
+	LibinputInitScrollMethodsProperty(dev, driver_data, device);
+	LibinputInitClickMethodsProperty(dev, driver_data, device);
+	LibinputInitMiddleEmulationProperty(dev, driver_data, device);
 
 	/* Device node property, read-only  */
 	device_node = driver_data->path;

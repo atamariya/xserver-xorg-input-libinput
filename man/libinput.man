@@ -12,6 +12,7 @@ libinput \- libinput-based X.Org input driver
 \ \ ...
 .B EndSection
 .fi
+
 .SH NOTE
 This is the man page for the X input driver. If you are looking for the
 library documentation, go to 
@@ -30,6 +31,7 @@ devices are configured through the
 directive (refer to __xconfigfile__(__filemansuffix__)) instead of manual
 per-device configuration. Devices configured in the
 __xconfigfile__(__filemansuffix__) are not hot-plug capable.
+
 .SH CONFIGURATION DETAILS
 Please refer to __xconfigfile__(__filemansuffix__) for general configuration
 details and for options that can be used with all input drivers.  This
@@ -48,13 +50,38 @@ The mapping from device node to hardware is system-dependent. Property:
 .BI "Option \*qAccelSpeed\*q \*q" float \*q
 Sets the pointer acceleration speed within the range [-1, 1]
 .TP 7
+.BI "Option \*qButtonMapping\*q \*q" string \*q
+Sets the logical button mapping for this device, see
+XSetPointerMapping(__libmansuffix__). The string must be a
+space-separated list of button mappings in the order of the
+logical buttons on the device, starting with button 1.
+The default mapping is "1 2 3 ... 32". A mapping of 0
+deactivates the button. Multiple buttons can have the same mapping.
+Invalid mapping strings are discarded and the default mapping
+is used for all buttons. Buttons not specified in the user's mapping use the
+default mapping. See section
+.B BUTTON MAPPING
+for more details.
+.TP 7
 .BI "Option \*qCalibrationMatrix\*q \*q" string \*q
 A string of 9 space-separated floating point numbers.
 Sets the calibration matrix to the 3x3 matrix where the first row is (abc),
 the second row is (def) and the third row is (ghi).
 .TP 7
+.BI "Option \*qClickMethod\*q \*q" string \*q
+Enables a click method. Permitted values are
+.BI none,
+.BI buttonareas,
+.BI clickfinger.
+Not all devices support all methods, if an option is unsupported, the
+default click method for this device is used.
+.TP 7
 .BI "Option \*qLeftHanded\*q \*q" bool \*q
 Enables left-handed button orientation, i.e. swapping left and right buttons.
+.TP 7
+.BI "Option \*qMiddleEmulation\*q \*q" bool \*q
+Enables middle button emulation. When enabled, pressing the left and right
+buttons simultaneously produces a middle mouse button click.
 .TP 7
 .BI "Option \*qNaturalScrolling\*q \*q" bool \*q
 Enables or disables natural scrolling behavior.
@@ -88,7 +115,11 @@ configuration option. For all options, the default value is the one used by
 libinput. On configuration failure, the default value is applied.
 
 .SH SUPPORTED PROPERTIES
-The following properties are provided by the
+.B libinput
+exports runtime-configurable options as properties. If a property listed
+below is not available, the matching configuration option is not available
+on the device. This however does not imply that the feature is not available
+on the device. The following properties are provided by the
 .B libinput
 driver.
 .TP 7
@@ -105,9 +136,74 @@ driver.
 .BI "libinput Natural Scrolling Enabled"
 1 boolean value (8 bit, 0 or 1). 1 enables natural scrolling
 .TP 7
-.BI "libinput Send Events Mode"
-1 32-bit value, defines the sendevent mode. See the libinput documentation
-for the allowed values.
+.BI "libinput Send Events Modes Available"
+2 boolean values (8 bit, 0 or 1), in order "disabled" and
+"disabled-on-external-mouse". Indicates which send-event modes are available
+on this device.
+.TP 7
+.BI "libinput Send Events Mode Enabled"
+2 boolean values (8 bit, 0 or 1), in order "disabled" and
+"disabled-on-external-mouse". Indicates which send-event modes is currently
+enabled on this device.
+.TP 7
+.BI "libinput Left Handed Enabled"
+1 boolean value (8 bit, 0 or 1). Indicates if left-handed mode is enabled or
+disabled.
+.TP 7
+.BI "libinput Scroll Methods Available"
+3 boolean values (8 bit, 0 or 1), in order "two-finger", "edge", "button".
+Indicates which scroll methods are available on this device.
+.TP 7
+.BI "libinput Scroll Method Enabled"
+3 boolean values (8 bit, 0 or 1), in order "two-finger", "edge", "button".
+Indicates which scroll method is currently enabled on this device.
+.TP 7
+.BI "libinput Button Scrolling Button"
+1 32-bit value. Sets the button number to use for button scrolling. This
+setting is independent of the scroll method, to enable button scrolling the
+method must be set to button-scrolling and a valid button must be set.
+.TP 7
+.BI "libinput Click Methods Available"
+2 boolean values (8 bit, 0 or 1), in order "buttonareas", "clickfinger".
+Indicates which click methods are available on this device.
+.TP 7
+.BI "libinput Click Methods Enabled"
+2 boolean values (8 bit, 0 or 1), in order "buttonareas", "clickfinger".
+Indicates which click methods are enabled on this device.
+.TP 7
+.BI "libinput Middle Emulation Enabled"
+1 boolean value (8 bit, 0 or 1). Indicates if middle emulation is enabled or
+disabled.
+.TP7
+.PP
+The above properties have a
+.BI "libinput <property name> Default"
+equivalent that indicates the default value for this setting on this device.
+
+.SH BUTTON MAPPING
+X clients receive events with logical button numbers, where 1, 2, 3
+are usually interpreted as left, middle, right and logical buttons 4, 5, 6,
+7 are usually interpreted as scroll up, down, left, right. The fourth and
+fifth physical buttons on a device will thus send logical buttons 8 and 9.
+The
+.B ButtonMapping
+option adjusts the logical button mapping, it does not affect how a physical
+button is mapped to a logical button.
+.PP
+Traditionally, a device was set to left-handed button mode by applying a
+button mapping of
+.B "\*q3 2 1 ...\*q"
+On systems using the
+.B libinput
+__xservername__ input driver it is recommended to use the
+.B LeftHanded
+option instead.
+.PP
+The
+.B libinput
+__xservername__ input driver does not use the button mapping after setup.
+Use XSetPointerMapping(__libmansuffix__) to modify the button mapping at
+runtime.
 
 .SH AUTHORS
 Peter Hutterer
