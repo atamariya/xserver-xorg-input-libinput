@@ -98,9 +98,11 @@ struct xf86libinput {
 
 	struct options {
 		BOOL tapping;
+		BOOL tap_drag_lock;
 		BOOL natural_scrolling;
 		BOOL left_handed;
 		BOOL middle_emulation;
+		BOOL disable_while_typing;
 		CARD32 sendevents;
 		CARD32 scroll_button; /* xorg button number */
 		float speed;
@@ -262,6 +264,13 @@ LibinputApplyConfig(DeviceIntPtr dev)
 			    "Failed to set Tapping to %d\n",
 			    driver_data->options.tapping);
 
+	if (libinput_device_config_tap_get_finger_count(device) > 0 &&
+	    libinput_device_config_tap_set_drag_lock_enabled(device,
+							     driver_data->options.tap_drag_lock) != LIBINPUT_CONFIG_STATUS_SUCCESS)
+		xf86IDrvMsg(pInfo, X_ERROR,
+			    "Failed to set Tapping DragLock to %d\n",
+			    driver_data->options.tap_drag_lock);
+
 	if (libinput_device_config_calibration_has_matrix(device) &&
 	    libinput_device_config_calibration_set_matrix(device,
 							  driver_data->options.matrix) != LIBINPUT_CONFIG_STATUS_SUCCESS)
@@ -330,6 +339,13 @@ LibinputApplyConfig(DeviceIntPtr dev)
 		xf86IDrvMsg(pInfo, X_ERROR,
 			    "Failed to set MiddleEmulation to %d\n",
 			    driver_data->options.middle_emulation);
+
+	if (libinput_device_config_dwt_is_available(device) &&
+	    libinput_device_config_dwt_set_enabled(device,
+						   driver_data->options.disable_while_typing) != LIBINPUT_CONFIG_STATUS_SUCCESS)
+		xf86IDrvMsg(pInfo, X_ERROR,
+			    "Failed to set DisableWhileTyping to %d\n",
+			    driver_data->options.disable_while_typing);
 }
 
 static int
@@ -456,7 +472,7 @@ xf86libinput_init_pointer(InputInfoPtr pInfo)
 	Atom btnlabels[MAX_BUTTONS];
 	Atom axislabels[TOUCHPAD_NUM_AXES];
 
-	for (i = BTN_BACK; i >= BTN_SIDE; i--) {
+	for (i = BTN_JOYSTICK - 1; i >= BTN_SIDE; i--) {
 		if (libinput_device_pointer_has_button(driver_data->device, i)) {
 			nbuttons += i - BTN_SIDE + 1;
 			break;
@@ -916,6 +932,13 @@ xf86libinput_handle_event(struct libinput_event *event)
 						  libinput_event_get_touch_event(event),
 						  libinput_event_get_type(event));
 			break;
+		case LIBINPUT_EVENT_GESTURE_SWIPE_BEGIN:
+		case LIBINPUT_EVENT_GESTURE_SWIPE_UPDATE:
+		case LIBINPUT_EVENT_GESTURE_SWIPE_END:
+		case LIBINPUT_EVENT_GESTURE_PINCH_BEGIN:
+		case LIBINPUT_EVENT_GESTURE_PINCH_UPDATE:
+		case LIBINPUT_EVENT_GESTURE_PINCH_END:
+			break;
 	}
 }
 
@@ -1030,6 +1053,30 @@ xf86libinput_parse_tap_option(InputInfoPtr pInfo,
 	}
 
 	return tap;
+}
+
+static inline BOOL
+xf86libinput_parse_tap_drag_lock_option(InputInfoPtr pInfo,
+					struct libinput_device *device)
+{
+	BOOL drag_lock;
+
+	if (libinput_device_config_tap_get_finger_count(device) == 0)
+		return FALSE;
+
+	drag_lock = xf86SetBoolOption(pInfo->options,
+				      "TappingDragLock",
+				      libinput_device_config_tap_get_drag_lock_enabled(device));
+
+	if (libinput_device_config_tap_set_drag_lock_enabled(device, drag_lock) !=
+	    LIBINPUT_CONFIG_STATUS_SUCCESS) {
+		xf86IDrvMsg(pInfo, X_ERROR,
+			    "Failed to set Tapping Drag Lock to %d\n",
+			    drag_lock);
+		drag_lock = libinput_device_config_tap_get_drag_lock_enabled(device);
+	}
+
+	return drag_lock;
 }
 
 static inline double
@@ -1298,6 +1345,29 @@ xf86libinput_parse_middleemulation_option(InputInfoPtr pInfo,
 	return enabled;
 }
 
+static inline BOOL
+xf86libinput_parse_disablewhiletyping_option(InputInfoPtr pInfo,
+					     struct libinput_device *device)
+{
+	BOOL enabled;
+
+	if (!libinput_device_config_dwt_is_available(device))
+		return FALSE;
+
+	enabled = xf86SetBoolOption(pInfo->options,
+				    "DisableWhileTyping",
+				    libinput_device_config_dwt_get_default_enabled(device));
+	if (libinput_device_config_dwt_set_enabled(device, enabled) !=
+	    LIBINPUT_CONFIG_STATUS_SUCCESS) {
+		xf86IDrvMsg(pInfo, X_ERROR,
+			    "Failed to set DisableWhileTyping to %d\n",
+			    enabled);
+		enabled = libinput_device_config_dwt_get_enabled(device);
+	}
+
+	return enabled;
+}
+
 static void
 xf86libinput_parse_buttonmap_option(InputInfoPtr pInfo,
 				    unsigned char *btnmap,
@@ -1342,6 +1412,7 @@ xf86libinput_parse_options(InputInfoPtr pInfo,
 
 	/* libinput options */
 	options->tapping = xf86libinput_parse_tap_option(pInfo, device);
+	options->tap_drag_lock = xf86libinput_parse_tap_drag_lock_option(pInfo, device);
 	options->speed = xf86libinput_parse_accel_option(pInfo, device);
 	options->natural_scrolling = xf86libinput_parse_natscroll_option(pInfo, device);
 	options->sendevents = xf86libinput_parse_sendevents_option(pInfo, device);
@@ -1350,6 +1421,7 @@ xf86libinput_parse_options(InputInfoPtr pInfo,
 	options->scroll_button = xf86libinput_parse_scrollbutton_option(pInfo, device);
 	options->click_method = xf86libinput_parse_clickmethod_option(pInfo, device);
 	options->middle_emulation = xf86libinput_parse_middleemulation_option(pInfo, device);
+	options->disable_while_typing = xf86libinput_parse_disablewhiletyping_option(pInfo, device);
 	xf86libinput_parse_calibration_option(pInfo, device, driver_data->options.matrix);
 
 	/* non-libinput options */
@@ -1523,6 +1595,8 @@ _X_EXPORT XF86ModuleData libinputModuleData = {
 /* libinput-specific properties */
 static Atom prop_tap;
 static Atom prop_tap_default;
+static Atom prop_tap_drag_lock;
+static Atom prop_tap_drag_lock_default;
 static Atom prop_calibration;
 static Atom prop_calibration_default;
 static Atom prop_accel;
@@ -1544,6 +1618,8 @@ static Atom prop_click_method_enabled;
 static Atom prop_click_method_default;
 static Atom prop_middle_emulation;
 static Atom prop_middle_emulation_default;
+static Atom prop_disable_while_typing;
+static Atom prop_disable_while_typing_default;
 
 /* general properties */
 static Atom prop_float;
@@ -1596,6 +1672,37 @@ LibinputSetPropertyTap(DeviceIntPtr dev,
 			return BadMatch;
 	} else {
 		driver_data->options.tapping = *data;
+	}
+
+	return Success;
+}
+
+static inline int
+LibinputSetPropertyTapDragLock(DeviceIntPtr dev,
+			       Atom atom,
+			       XIPropertyValuePtr val,
+			       BOOL checkonly)
+{
+	InputInfoPtr pInfo = dev->public.devicePrivate;
+	struct xf86libinput *driver_data = pInfo->private;
+	struct libinput_device *device = driver_data->device;
+	BOOL* data;
+
+	if (val->format != 8 || val->size != 1 || val->type != XA_INTEGER)
+		return BadMatch;
+
+	data = (BOOL*)val->data;
+	if (checkonly) {
+		if (*data != 0 && *data != 1)
+			return BadValue;
+
+		if (!xf86libinput_check_device(dev, atom))
+			return BadMatch;
+
+		if (libinput_device_config_tap_get_finger_count(device) == 0)
+			return BadMatch;
+	} else {
+		driver_data->options.tap_drag_lock = *data;
 	}
 
 	return Success;
@@ -1922,6 +2029,37 @@ LibinputSetPropertyMiddleEmulation(DeviceIntPtr dev,
 	return Success;
 }
 
+static inline int
+LibinputSetPropertyDisableWhileTyping(DeviceIntPtr dev,
+				      Atom atom,
+				      XIPropertyValuePtr val,
+				      BOOL checkonly)
+{
+	InputInfoPtr pInfo = dev->public.devicePrivate;
+	struct xf86libinput *driver_data = pInfo->private;
+	struct libinput_device *device = driver_data->device;
+	BOOL* data;
+
+	if (val->format != 8 || val->size != 1 || val->type != XA_INTEGER)
+		return BadMatch;
+
+	data = (BOOL*)val->data;
+	if (checkonly) {
+		if (*data != 0 && *data != 1)
+			return BadValue;
+
+		if (!xf86libinput_check_device(dev, atom))
+			return BadMatch;
+
+		if (!libinput_device_config_dwt_is_available(device))
+			return BadMatch;
+	} else {
+		driver_data->options.disable_while_typing = *data;
+	}
+
+	return Success;
+}
+
 static int
 LibinputSetProperty(DeviceIntPtr dev, Atom atom, XIPropertyValuePtr val,
                  BOOL checkonly)
@@ -1930,6 +2068,8 @@ LibinputSetProperty(DeviceIntPtr dev, Atom atom, XIPropertyValuePtr val,
 
 	if (atom == prop_tap)
 		rc = LibinputSetPropertyTap(dev, atom, val, checkonly);
+	else if (atom == prop_tap_drag_lock)
+		rc = LibinputSetPropertyTapDragLock(dev, atom, val, checkonly);
 	else if (atom == prop_calibration)
 		rc = LibinputSetPropertyCalibration(dev, atom, val,
 						    checkonly);
@@ -1955,8 +2095,11 @@ LibinputSetProperty(DeviceIntPtr dev, Atom atom, XIPropertyValuePtr val,
 		rc = LibinputSetPropertyClickMethod(dev, atom, val, checkonly);
 	else if (atom == prop_middle_emulation)
 		rc = LibinputSetPropertyMiddleEmulation(dev, atom, val, checkonly);
+	else if (atom == prop_disable_while_typing)
+		rc = LibinputSetPropertyDisableWhileTyping(dev, atom, val, checkonly);
 	else if (atom == prop_device || atom == prop_product_id ||
 		 atom == prop_tap_default ||
+		 atom == prop_tap_drag_lock_default ||
 		 atom == prop_calibration_default ||
 		 atom == prop_accel_default ||
 		 atom == prop_natural_scroll_default ||
@@ -1965,7 +2108,8 @@ LibinputSetProperty(DeviceIntPtr dev, Atom atom, XIPropertyValuePtr val,
 		 atom == prop_scroll_method_default ||
 		 atom == prop_scroll_button_default ||
 		 atom == prop_click_method_default ||
-		 atom == prop_middle_emulation_default)
+		 atom == prop_middle_emulation_default ||
+		 atom == prop_disable_while_typing_default)
 		return BadAccess; /* read-only */
 	else
 		return Success;
@@ -2022,6 +2166,30 @@ LibinputInitTapProperty(DeviceIntPtr dev,
 						LIBINPUT_PROP_TAP_DEFAULT,
 						XA_INTEGER, 8,
 						1, &tap);
+}
+
+static void
+LibinputInitTapDragLockProperty(DeviceIntPtr dev,
+				struct xf86libinput *driver_data,
+				struct libinput_device *device)
+{
+	BOOL drag_lock = driver_data->options.tap_drag_lock;
+
+	if (libinput_device_config_tap_get_finger_count(device) == 0)
+		return;
+
+	prop_tap_drag_lock = LibinputMakeProperty(dev,
+						  LIBINPUT_PROP_TAP_DRAG_LOCK,
+						  XA_INTEGER, 8,
+						  1, &drag_lock);
+	if (!prop_tap_drag_lock)
+		return;
+
+	drag_lock = libinput_device_config_tap_get_default_enabled(device);
+	prop_tap_drag_lock_default = LibinputMakeProperty(dev,
+							  LIBINPUT_PROP_TAP_DRAG_LOCK_DEFAULT,
+							  XA_INTEGER, 8,
+							  1, &drag_lock);
 }
 
 static void
@@ -2371,6 +2539,32 @@ LibinputInitMiddleEmulationProperty(DeviceIntPtr dev,
 }
 
 static void
+LibinputInitDisableWhileTypingProperty(DeviceIntPtr dev,
+				       struct xf86libinput *driver_data,
+				       struct libinput_device *device)
+{
+	BOOL dwt = driver_data->options.disable_while_typing;
+
+	if (!libinput_device_config_dwt_is_available(device))
+		return;
+
+	prop_disable_while_typing = LibinputMakeProperty(dev,
+							 LIBINPUT_PROP_DISABLE_WHILE_TYPING,
+							 XA_INTEGER,
+							 8,
+							 1,
+							 &dwt);
+	if (!prop_disable_while_typing)
+		return;
+
+	dwt = libinput_device_config_dwt_get_default_enabled(device);
+	prop_disable_while_typing_default = LibinputMakeProperty(dev,
+								 LIBINPUT_PROP_DISABLE_WHILE_TYPING_DEFAULT,
+								 XA_INTEGER, 8,
+								 1, &dwt);
+}
+
+static void
 LibinputInitProperty(DeviceIntPtr dev)
 {
 	InputInfoPtr pInfo  = dev->public.devicePrivate;
@@ -2383,6 +2577,7 @@ LibinputInitProperty(DeviceIntPtr dev)
 	prop_float = XIGetKnownProperty("FLOAT");
 
 	LibinputInitTapProperty(dev, driver_data, device);
+	LibinputInitTapDragLockProperty(dev, driver_data, device);
 	LibinputInitCalibrationProperty(dev, driver_data, device);
 	LibinputInitAccelProperty(dev, driver_data, device);
 	LibinputInitNaturalScrollProperty(dev, driver_data, device);
@@ -2391,6 +2586,7 @@ LibinputInitProperty(DeviceIntPtr dev)
 	LibinputInitScrollMethodsProperty(dev, driver_data, device);
 	LibinputInitClickMethodsProperty(dev, driver_data, device);
 	LibinputInitMiddleEmulationProperty(dev, driver_data, device);
+	LibinputInitDisableWhileTypingProperty(dev, driver_data, device);
 
 	/* Device node property, read-only  */
 	device_node = driver_data->path;

@@ -44,6 +44,9 @@ are supported:
 .BI "Option \*qDevice\*q \*q" string \*q
 Specifies the device through which the device can be accessed.  This will 
 generally be of the form \*q/dev/input/eventX\*q, where X is some integer.
+When using
+.B InputClass
+directives, this option is set by the server.
 The mapping from device node to hardware is system-dependent. Property:
 "Device Node" (read-only).
 .TP 7
@@ -64,7 +67,8 @@ default mapping. See section
 for more details.
 .TP 7
 .BI "Option \*qCalibrationMatrix\*q \*q" string \*q
-A string of 9 space-separated floating point numbers.
+A string of 9 space-separated floating point numbers, in the order
+\*qa b c d e f g h i\*q.
 Sets the calibration matrix to the 3x3 matrix where the first row is (abc),
 the second row is (def) and the third row is (ghi).
 .TP 7
@@ -109,6 +113,16 @@ mouse is connected".
 .TP 7
 .BI "Option \*qTapping\*q \*q" bool \*q
 Enables or disables tap-to-click behavior.
+.TP 7
+.BI "Option \*qTappingDragLock\*q \*q" bool \*q
+Enables or disables drag lock during tapping behavior. When enabled, a
+finger up during tap-and-drag will not immediately release the button. If
+the finger is set down again within the timeout, the draging process
+continues.
+.TP 7
+.BI "Option \*qDisableWhileTyping\*q \*q" bool \*q
+Indicates if the touchpad should be disabled while typing on the keyboard
+(this does not apply to modifier keys such as Ctrl or Alt).
 .PP
 For all options, the options are only parsed if the device supports that
 configuration option. For all options, the default value is the one used by
@@ -125,6 +139,9 @@ driver.
 .TP 7
 .BI "libinput Tapping Enabled"
 1 boolean value (8 bit, 0 or 1). 1 enables tapping
+.TP 7
+.BI "libinput Tapping Drag Lock Enabled"
+1 boolean value (8 bit, 0 or 1). 1 enables drag lock during tapping
 .TP 7
 .BI "libinput Calibration Matrix"
 9 32-bit float values, representing a 3x3 calibration matrix, order is row
@@ -174,6 +191,10 @@ Indicates which click methods are enabled on this device.
 .BI "libinput Middle Emulation Enabled"
 1 boolean value (8 bit, 0 or 1). Indicates if middle emulation is enabled or
 disabled.
+.TP 7
+.BI "libinput Disable While Typing Enabled"
+1 boolean value (8 bit, 0 or 1). Indicates if disable while typing is
+enabled or disabled.
 .TP7
 .PP
 The above properties have a
