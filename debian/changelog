@@ -1,3 +1,9 @@
+xserver-xorg-input-libinput (0.14.0-1) UNRELEASED; urgency=medium
+
+  * New upstream release.
+
+ -- Timo Aaltonen <tjaalton@debian.org>  Wed, 23 Sep 2015 13:11:44 +0300
+
 xserver-xorg-input-libinput (0.13.0-1) unstable; urgency=medium
 
   * New upstream release.
