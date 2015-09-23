@@ -1,5 +1,5 @@
 /*
- * Copyright © 2013 Red Hat, Inc.
+ * Copyright © 2013-2015 Red Hat, Inc.
  *
  * Permission to use, copy, modify, distribute, and sell this software
  * and its documentation for any purpose is hereby granted without
@@ -25,7 +25,6 @@
 #include "config.h"
 #endif
 
-#include <sys/epoll.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <time.h>
@@ -35,12 +34,14 @@
 #include <exevents.h>
 #include <xkbsrv.h>
 #include <xf86Xinput.h>
+#include <xf86_OSproc.h>
 #include <xserver-properties.h>
 #include <libinput.h>
 #include <linux/input.h>
 
 #include <X11/Xatom.h>
 
+#include "draglock.h"
 #include "libinput-properties.h"
 
 #ifndef XI86_SERVER_FD
@@ -111,81 +112,16 @@ struct xf86libinput {
 		enum libinput_config_click_method click_method;
 
 		unsigned char btnmap[MAX_BUTTONS + 1];
-	} options;
-};
 
-/*
-   libinput provides a userdata for the context, but not per path device. so
-   the open_restricted call has the libinput context, but no reference to
-   the pInfo->fd that we actually need to return.
-   To avoid this, we store each path/fd combination during pre_init in the
-   context, then return that during open_restricted. If a device is added
-   twice with two different fds this may give us the wrong fd but why are
-   you doing that anyway.
- */
-struct serverfd {
-	struct xorg_list node;
-	int fd;
-	char *path;
+		BOOL horiz_scrolling_enabled;
+	} options;
+
+	struct draglock draglock;
 };
 
 static inline int
 use_server_fd(const InputInfoPtr pInfo) {
 	return pInfo->fd > -1 && (pInfo->flags & XI86_SERVER_FD);
-}
-
-static inline void
-fd_push(struct xf86libinput_driver *context,
-	int fd,
-	const char *path)
-{
-	struct serverfd *sfd = xnfcalloc(1, sizeof(*sfd));
-
-	sfd->fd = fd;
-	sfd->path = xnfstrdup(path);
-	xorg_list_add(&sfd->node, &context->server_fds);
-}
-
-static inline int
-fd_get(struct xf86libinput_driver *context,
-       const char *path)
-{
-	struct serverfd *sfd;
-
-	xorg_list_for_each_entry(sfd, &context->server_fds, node) {
-		if (strcmp(path, sfd->path) == 0)
-			return sfd->fd;
-	}
-
-	return -1;
-}
-
-static inline void
-fd_pop(struct xf86libinput_driver *context, int fd)
-{
-	struct serverfd *sfd;
-
-	xorg_list_for_each_entry(sfd, &context->server_fds, node) {
-		if (fd != sfd->fd)
-			continue;
-
-		xorg_list_del(&sfd->node);
-		free(sfd->path);
-		free(sfd);
-		break;
-	}
-}
-
-static inline int
-fd_find(struct xf86libinput_driver *context, int fd)
-{
-	struct serverfd *sfd;
-
-	xorg_list_for_each_entry(sfd, &context->server_fds, node) {
-		if (fd == sfd->fd)
-			return fd;
-	}
-	return -1;
 }
 
 static inline unsigned int
@@ -356,12 +292,6 @@ xf86libinput_on(DeviceIntPtr dev)
 	struct libinput *libinput = driver_context.libinput;
 	struct libinput_device *device = driver_data->device;
 
-	if (use_server_fd(pInfo)) {
-		char *path = xf86SetStrOption(pInfo->options, "Device", NULL);
-		fd_push(&driver_context, pInfo->fd, path);
-		free(path);
-	}
-
 	device = libinput_path_add_device(libinput, driver_data->path);
 	if (!device)
 		return !Success;
@@ -400,7 +330,6 @@ xf86libinput_off(DeviceIntPtr dev)
 	}
 
 	if (use_server_fd(pInfo)) {
-		fd_pop(&driver_context, pInfo->fd);
 		pInfo->fd = xf86SetIntOption(pInfo->options, "fd", -1);
 	} else {
 		pInfo->fd = -1;
@@ -770,12 +699,18 @@ static void
 xf86libinput_handle_button(InputInfoPtr pInfo, struct libinput_event_pointer *event)
 {
 	DeviceIntPtr dev = pInfo->dev;
+	struct xf86libinput *driver_data = pInfo->private;
 	int button;
 	int is_press;
 
 	button = btn_linux2xorg(libinput_event_pointer_get_button(event));
 	is_press = (libinput_event_pointer_get_button_state(event) == LIBINPUT_BUTTON_STATE_PRESSED);
-	xf86PostButtonEvent(dev, Relative, button, is_press, 0, 0);
+
+	if (draglock_get_mode(&driver_data->draglock) != DRAGLOCK_DISABLED)
+		draglock_filter_button(&driver_data->draglock, &button, &is_press);
+
+	if (button)
+		xf86PostButtonEvent(dev, Relative, button, is_press, 0, 0);
 }
 
 static void
@@ -823,6 +758,10 @@ xf86libinput_handle_axis(InputInfoPtr pInfo, struct libinput_event_pointer *even
 		}
 		valuator_mask_set_double(mask, 3, value);
 	}
+
+	if (!driver_data->options.horiz_scrolling_enabled)
+		goto out;
+
 	axis = LIBINPUT_POINTER_AXIS_SCROLL_HORIZONTAL;
 	if (libinput_event_pointer_has_axis(event, axis)) {
 		if (source == LIBINPUT_POINTER_AXIS_SOURCE_WHEEL) {
@@ -834,6 +773,7 @@ xf86libinput_handle_axis(InputInfoPtr pInfo, struct libinput_event_pointer *even
 		valuator_mask_set_double(mask, 2, value);
 	}
 
+out:
 	xf86PostMotionEventM(dev, Relative, mask);
 }
 
@@ -966,25 +906,57 @@ xf86libinput_read_input(InputInfoPtr pInfo)
 	}
 }
 
+/*
+   libinput provides a userdata for the context, but not per path device. so
+   the open_restricted call has the libinput context, but no reference to
+   the pInfo->fd that we actually need to return.
+   The server stores the fd in the options though, so we just get it from
+   there. If a device is added twice with two different fds this may give us
+   the wrong fd but why are you doing that anyway.
+ */
 static int
 open_restricted(const char *path, int flags, void *data)
 {
-	struct xf86libinput_driver *context = data;
-	int fd;
+	InputInfoPtr pInfo;
+	int fd = -1;
 
-	fd = fd_get(context, path);
-	if (fd == -1)
-		fd = open(path, flags);
+	nt_list_for_each_entry(pInfo, xf86FirstLocalDevice(), next) {
+		char *device = xf86CheckStrOption(pInfo->options, "Device", NULL);
+
+		if (device != NULL && strcmp(path, device) == 0) {
+			free(device);
+			break;
+		}
+		free(device);
+	}
+
+	if (pInfo == NULL) {
+		xf86Msg(X_ERROR, "Failed to look up path '%s'\n", path);
+		return -ENODEV;
+	}
+
+	fd = xf86OpenSerial(pInfo->options);
 	return fd < 0 ? -errno : fd;
 }
 
 static void
 close_restricted(int fd, void *data)
 {
-	struct xf86libinput_driver *context = data;
+	InputInfoPtr pInfo;
+	int server_fd = -1;
+	BOOL found = FALSE;
 
-	if (fd_find(context, fd) == -1)
-		close(fd);
+	nt_list_for_each_entry(pInfo, xf86FirstLocalDevice(), next) {
+		server_fd = xf86CheckIntOption(pInfo->options, "fd", -1);
+
+		if (server_fd == fd) {
+			found = TRUE;
+			break;
+		}
+	}
+
+	if (!found)
+		xf86CloseSerial(fd);
 }
 
 const struct libinput_interface interface = {
@@ -1131,28 +1103,28 @@ static inline enum libinput_config_send_events_mode
 xf86libinput_parse_sendevents_option(InputInfoPtr pInfo,
 				     struct libinput_device *device)
 {
-	char *strmode;
+	char *modestr;
 	enum libinput_config_send_events_mode mode;
 
 	if (libinput_device_config_send_events_get_modes(device) == LIBINPUT_CONFIG_SEND_EVENTS_ENABLED)
 		return LIBINPUT_CONFIG_SEND_EVENTS_ENABLED;
 
 	mode = libinput_device_config_send_events_get_mode(device);
-	strmode = xf86SetStrOption(pInfo->options,
+	modestr = xf86SetStrOption(pInfo->options,
 				   "SendEventsMode",
 				   NULL);
-	if (strmode) {
-		if (strcmp(strmode, "enabled") == 0)
+	if (modestr) {
+		if (strcmp(modestr, "enabled") == 0)
 			mode = LIBINPUT_CONFIG_SEND_EVENTS_ENABLED;
-		else if (strcmp(strmode, "disabled") == 0)
+		else if (strcmp(modestr, "disabled") == 0)
 			mode = LIBINPUT_CONFIG_SEND_EVENTS_DISABLED;
-		else if (strcmp(strmode, "disabled-on-external-mouse") == 0)
+		else if (strcmp(modestr, "disabled-on-external-mouse") == 0)
 			mode = LIBINPUT_CONFIG_SEND_EVENTS_DISABLED_ON_EXTERNAL_MOUSE;
 		else
 			xf86IDrvMsg(pInfo, X_ERROR,
 				    "Invalid SendeventsMode: %s\n",
-				    strmode);
-		free(strmode);
+				    modestr);
+		free(modestr);
 	}
 
 	if (libinput_device_config_send_events_set_mode(device, mode) !=
@@ -1403,6 +1375,26 @@ xf86libinput_parse_buttonmap_option(InputInfoPtr pInfo,
 	free(mapping);
 }
 
+static inline void
+xf86libinput_parse_draglock_option(InputInfoPtr pInfo,
+				   struct xf86libinput *driver_data)
+{
+	char *str;
+
+	str = xf86CheckStrOption(pInfo->options, "DragLockButtons",NULL);
+	if (draglock_init_from_string(&driver_data->draglock, str) != 0)
+		xf86IDrvMsg(pInfo, X_ERROR,
+			    "Invalid DragLockButtons option: \"%s\"\n",
+			    str);
+	free(str);
+}
+
+static inline BOOL
+xf86libinput_parse_horiz_scroll_option(InputInfoPtr pInfo)
+{
+	return xf86SetBoolOption(pInfo->options, "HorizontalScrolling", TRUE);
+}
+
 static void
 xf86libinput_parse_options(InputInfoPtr pInfo,
 			   struct xf86libinput *driver_data,
@@ -1428,6 +1420,10 @@ xf86libinput_parse_options(InputInfoPtr pInfo,
 	xf86libinput_parse_buttonmap_option(pInfo,
 					    options->btnmap,
 					    sizeof(options->btnmap));
+	if (libinput_device_has_capability(device, LIBINPUT_DEVICE_CAP_POINTER)) {
+		xf86libinput_parse_draglock_option(pInfo, driver_data);
+		options->horiz_scrolling_enabled = xf86libinput_parse_horiz_scroll_option(pInfo);
+	}
 }
 
 static int
@@ -1484,9 +1480,6 @@ xf86libinput_pre_init(InputDriverPtr drv,
 		goto fail;
 	}
 
-	if (use_server_fd(pInfo))
-		fd_push(&driver_context, pInfo->fd, path);
-
 	device = libinput_path_add_device(libinput, path);
 	if (!device) {
 		xf86IDrvMsg(pInfo, X_ERROR, "Failed to create a device for %s\n", path);
@@ -1498,8 +1491,6 @@ xf86libinput_pre_init(InputDriverPtr drv,
 	  */
 	libinput_device_ref(device);
 	libinput_path_remove_device(device);
-	if (use_server_fd(pInfo))
-	    fd_pop(&driver_context, pInfo->fd);
 
 	pInfo->private = driver_data;
 	driver_data->path = path;
@@ -1525,8 +1516,6 @@ xf86libinput_pre_init(InputDriverPtr drv,
 
 	return Success;
 fail:
-	if (use_server_fd(pInfo) && driver_context.libinput != NULL)
-		fd_pop(&driver_context, pInfo->fd);
 	if (driver_data->valuators)
 		valuator_mask_free(&driver_data->valuators);
 	if (driver_data->valuators_unaccelerated)
@@ -1620,6 +1609,10 @@ static Atom prop_middle_emulation;
 static Atom prop_middle_emulation_default;
 static Atom prop_disable_while_typing;
 static Atom prop_disable_while_typing_default;
+
+/* driver properties */
+static Atom prop_draglock;
+static Atom prop_horiz_scroll;
 
 /* general properties */
 static Atom prop_float;
@@ -2060,6 +2053,112 @@ LibinputSetPropertyDisableWhileTyping(DeviceIntPtr dev,
 	return Success;
 }
 
+static inline int
+prop_draglock_set_meta(struct xf86libinput *driver_data,
+		       const BYTE *values,
+		       int len,
+		       BOOL checkonly)
+{
+	struct draglock *dl,
+			dummy; /* for checkonly */
+	int meta;
+
+	if (len > 1)
+		return BadImplementation; /* should not happen */
+
+	dl = (checkonly) ? &dummy : &driver_data->draglock;
+	meta = len > 0 ? values[0] : 0;
+
+	return draglock_set_meta(dl, meta) == 0 ? Success: BadValue;
+}
+
+static inline int
+prop_draglock_set_pairs(struct xf86libinput *driver_data,
+			const BYTE* pairs,
+			int len,
+			BOOL checkonly)
+{
+	struct draglock *dl,
+			dummy; /* for checkonly */
+	int data[MAX_BUTTONS + 1] = {0};
+	int i;
+	int highest = 0;
+
+	if (len >= ARRAY_SIZE(data))
+		return BadMatch;
+
+	if (len < 2 || len % 2)
+		return BadImplementation; /* should not happen */
+
+	dl = (checkonly) ? &dummy : &driver_data->draglock;
+
+	for (i = 0; i < len; i += 2) {
+		if (pairs[i] > MAX_BUTTONS)
+			return BadValue;
+
+		data[pairs[i]] = pairs[i+1];
+		highest = max(highest, pairs[i]);
+	}
+
+	return draglock_set_pairs(dl, data, highest + 1) == 0 ? Success : BadValue;
+}
+
+static inline int
+LibinputSetPropertyDragLockButtons(DeviceIntPtr dev,
+				   Atom atom,
+				   XIPropertyValuePtr val,
+				   BOOL checkonly)
+{
+	InputInfoPtr pInfo = dev->public.devicePrivate;
+	struct xf86libinput *driver_data = pInfo->private;
+
+	if (val->format != 8 || val->type != XA_INTEGER)
+		return BadMatch;
+
+	/* either a single value, or pairs of values */
+	if (val->size > 1 && val->size % 2)
+		return BadMatch;
+
+	if (!xf86libinput_check_device(dev, atom))
+		return BadMatch;
+
+	if (val->size <= 1)
+		return prop_draglock_set_meta(driver_data,
+					      (BYTE*)val->data,
+					      val->size, checkonly);
+	else
+		return prop_draglock_set_pairs(driver_data,
+					       (BYTE*)val->data,
+					       val->size, checkonly);
+}
+
+static inline int
+LibinputSetPropertyHorizScroll(DeviceIntPtr dev,
+			       Atom atom,
+			       XIPropertyValuePtr val,
+			       BOOL checkonly)
+{
+	InputInfoPtr pInfo = dev->public.devicePrivate;
+	struct xf86libinput *driver_data = pInfo->private;
+	BOOL enabled;
+
+	if (val->format != 8 || val->type != XA_INTEGER || val->size != 1)
+		return BadMatch;
+
+	enabled = *(BOOL*)val->data;
+	if (checkonly) {
+		if (enabled != 0 && enabled != 1)
+			return BadValue;
+
+		if (!xf86libinput_check_device (dev, atom))
+			return BadMatch;
+	} else {
+		driver_data->options.horiz_scrolling_enabled = enabled;
+	}
+
+	return Success;
+ }
+
 static int
 LibinputSetProperty(DeviceIntPtr dev, Atom atom, XIPropertyValuePtr val,
                  BOOL checkonly)
@@ -2097,6 +2196,10 @@ LibinputSetProperty(DeviceIntPtr dev, Atom atom, XIPropertyValuePtr val,
 		rc = LibinputSetPropertyMiddleEmulation(dev, atom, val, checkonly);
 	else if (atom == prop_disable_while_typing)
 		rc = LibinputSetPropertyDisableWhileTyping(dev, atom, val, checkonly);
+	else if (atom == prop_draglock)
+		rc = LibinputSetPropertyDragLockButtons(dev, atom, val, checkonly);
+	else if (atom == prop_horiz_scroll)
+		rc = LibinputSetPropertyHorizScroll(dev, atom, val, checkonly);
 	else if (atom == prop_device || atom == prop_product_id ||
 		 atom == prop_tap_default ||
 		 atom == prop_tap_drag_lock_default ||
@@ -2565,6 +2668,49 @@ LibinputInitDisableWhileTypingProperty(DeviceIntPtr dev,
 }
 
 static void
+LibinputInitDragLockProperty(DeviceIntPtr dev,
+			     struct xf86libinput *driver_data)
+{
+	size_t sz;
+	int dl_values[MAX_BUTTONS + 1];
+
+	if (!libinput_device_has_capability(driver_data->device,
+					    LIBINPUT_DEVICE_CAP_POINTER))
+		return;
+
+	switch (draglock_get_mode(&driver_data->draglock)) {
+	case DRAGLOCK_DISABLED:
+		sz = 0; /* will be an empty property */
+		break;
+	case DRAGLOCK_META:
+		dl_values[0] = draglock_get_meta(&driver_data->draglock);
+		sz = 1;
+		break;
+	case DRAGLOCK_PAIRS:
+		sz = draglock_get_pairs(&driver_data->draglock,
+					dl_values, sizeof(dl_values));
+		break;
+	}
+
+	prop_draglock = LibinputMakeProperty(dev,
+					     LIBINPUT_PROP_DRAG_LOCK_BUTTONS,
+					     XA_INTEGER, 8,
+					     sz, dl_values);
+}
+
+static void
+LibinputInitHorizScrollProperty(DeviceIntPtr dev,
+				struct xf86libinput *driver_data)
+{
+	BOOL enabled = driver_data->options.horiz_scrolling_enabled;
+
+	prop_horiz_scroll = LibinputMakeProperty(dev,
+						 LIBINPUT_PROP_HORIZ_SCROLL_ENABLED,
+						 XA_INTEGER, 8,
+						 1, &enabled);
+}
+
+static void
 LibinputInitProperty(DeviceIntPtr dev)
 {
 	InputInfoPtr pInfo  = dev->public.devicePrivate;
@@ -2613,4 +2759,7 @@ LibinputInitProperty(DeviceIntPtr dev)
 		return;
 
 	XISetDevicePropertyDeletable(dev, prop_product_id, FALSE);
+
+	LibinputInitDragLockProperty(dev, driver_data);
+	LibinputInitHorizScrollProperty(dev, driver_data);
 }

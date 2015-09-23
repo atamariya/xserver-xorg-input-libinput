@@ -23,7 +23,7 @@
 # Initialize Autoconf
 AC_PREREQ([2.60])
 AC_INIT([xf86-input-libinput],
-        [0.13.0],
+        [0.14.0],
         [https://bugs.freedesktop.org/enter_bug.cgi?product=xorg],
         [xf86-input-libinput])
 AC_CONFIG_SRCDIR([Makefile.am])
@@ -71,5 +71,6 @@ AC_CONFIG_FILES([Makefile
 		 include/Makefile
 		 src/Makefile
 		 man/Makefile
+		 test/Makefile
 		 xorg-libinput.pc])
 AC_OUTPUT
