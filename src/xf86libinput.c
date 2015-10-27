@@ -110,6 +110,7 @@ struct xf86libinput {
 		float matrix[9];
 		enum libinput_config_scroll_method scroll_method;
 		enum libinput_config_click_method click_method;
+		enum libinput_config_accel_profile accel_profile;
 
 		unsigned char btnmap[MAX_BUTTONS + 1];
 
@@ -193,6 +194,28 @@ LibinputApplyConfig(DeviceIntPtr dev)
 			xf86IDrvMsg(pInfo, X_ERROR,
 				    "Failed to set speed %.2f\n",
 				    driver_data->options.speed);
+
+	if (libinput_device_config_accel_get_profiles(device) &&
+	    driver_data->options.accel_profile != LIBINPUT_CONFIG_ACCEL_PROFILE_NONE  &&
+	    libinput_device_config_accel_set_profile(device,
+						     driver_data->options.accel_profile) !=
+			    LIBINPUT_CONFIG_STATUS_SUCCESS) {
+		const char *profile;
+
+		switch (driver_data->options.accel_profile) {
+		case LIBINPUT_CONFIG_ACCEL_PROFILE_ADAPTIVE:
+			profile = "adaptive";
+			break;
+		case LIBINPUT_CONFIG_ACCEL_PROFILE_FLAT:
+			profile = "flat";
+			break;
+		default:
+			profile = "unknown";
+			break;
+		}
+		xf86IDrvMsg(pInfo, X_ERROR, "Failed to set profile %s\n", profile);
+	}
+
 	if (libinput_device_config_tap_get_finger_count(device) > 0 &&
 	    libinput_device_config_tap_set_enabled(device,
 						   driver_data->options.tapping) != LIBINPUT_CONFIG_STATUS_SUCCESS)
@@ -1074,6 +1097,34 @@ xf86libinput_parse_accel_option(InputInfoPtr pInfo,
 	return speed;
 }
 
+static inline enum libinput_config_accel_profile
+xf86libinput_parse_accel_profile_option(InputInfoPtr pInfo,
+					struct libinput_device *device)
+{
+	enum libinput_config_accel_profile profile;
+	char *str;
+
+	if (libinput_device_config_accel_get_profiles(device) ==
+	    LIBINPUT_CONFIG_ACCEL_PROFILE_NONE)
+		return LIBINPUT_CONFIG_ACCEL_PROFILE_NONE;
+
+	str = xf86SetStrOption(pInfo->options, "AccelProfile", NULL);
+	if (!str)
+		profile = libinput_device_config_accel_get_profile(device);
+	else if (strncasecmp(str, "adaptive", 9) == 0)
+		profile = LIBINPUT_CONFIG_ACCEL_PROFILE_ADAPTIVE;
+	else if (strncasecmp(str, "flat", 4) == 0)
+		profile = LIBINPUT_CONFIG_ACCEL_PROFILE_FLAT;
+	else {
+		xf86IDrvMsg(pInfo, X_ERROR,
+			    "Unknown accel profile '%s'. Using default.\n",
+			    str);
+		profile = libinput_device_config_accel_get_profile(device);
+	}
+
+	return profile;
+}
+
 static inline BOOL
 xf86libinput_parse_natscroll_option(InputInfoPtr pInfo,
 				    struct libinput_device *device)
@@ -1406,6 +1457,7 @@ xf86libinput_parse_options(InputInfoPtr pInfo,
 	options->tapping = xf86libinput_parse_tap_option(pInfo, device);
 	options->tap_drag_lock = xf86libinput_parse_tap_drag_lock_option(pInfo, device);
 	options->speed = xf86libinput_parse_accel_option(pInfo, device);
+	options->accel_profile = xf86libinput_parse_accel_profile_option(pInfo, device);
 	options->natural_scrolling = xf86libinput_parse_natscroll_option(pInfo, device);
 	options->sendevents = xf86libinput_parse_sendevents_option(pInfo, device);
 	options->left_handed = xf86libinput_parse_lefthanded_option(pInfo, device);
@@ -1590,6 +1642,9 @@ static Atom prop_calibration;
 static Atom prop_calibration_default;
 static Atom prop_accel;
 static Atom prop_accel_default;
+static Atom prop_accel_profile_enabled;
+static Atom prop_accel_profile_default;
+static Atom prop_accel_profiles_available;
 static Atom prop_natural_scroll;
 static Atom prop_natural_scroll_default;
 static Atom prop_sendevents_available;
@@ -1764,6 +1819,47 @@ LibinputSetPropertyAccel(DeviceIntPtr dev,
 			return BadMatch;
 	} else {
 		driver_data->options.speed = *data;
+	}
+
+	return Success;
+}
+
+static inline int
+LibinputSetPropertyAccelProfile(DeviceIntPtr dev,
+				Atom atom,
+				XIPropertyValuePtr val,
+				BOOL checkonly)
+{
+	InputInfoPtr pInfo = dev->public.devicePrivate;
+	struct xf86libinput *driver_data = pInfo->private;
+	struct libinput_device *device = driver_data->device;
+	BOOL* data;
+	uint32_t profiles = 0;
+
+	if (val->format != 8 || val->size != 2 || val->type != XA_INTEGER)
+		return BadMatch;
+
+	data = (BOOL*)val->data;
+
+	if (data[0])
+		profiles |= LIBINPUT_CONFIG_ACCEL_PROFILE_ADAPTIVE;
+	if (data[1])
+		profiles |= LIBINPUT_CONFIG_ACCEL_PROFILE_FLAT;
+
+	if (checkonly) {
+		uint32_t supported;
+
+		if (__builtin_popcount(profiles) > 1)
+			return BadValue;
+
+		if (!xf86libinput_check_device (dev, atom))
+			return BadMatch;
+
+		supported = libinput_device_config_accel_get_profiles(device);
+		if (profiles && (profiles & supported) == 0)
+			return BadValue;
+	} else {
+		driver_data->options.accel_profile = profiles;
 	}
 
 	return Success;
@@ -2174,22 +2270,18 @@ LibinputSetProperty(DeviceIntPtr dev, Atom atom, XIPropertyValuePtr val,
 						    checkonly);
 	else if (atom == prop_accel)
 		rc = LibinputSetPropertyAccel(dev, atom, val, checkonly);
+	else if (atom == prop_accel_profile_enabled)
+		rc = LibinputSetPropertyAccelProfile(dev, atom, val, checkonly);
 	else if (atom == prop_natural_scroll)
 		rc = LibinputSetPropertyNaturalScroll(dev, atom, val, checkonly);
-	else if (atom == prop_sendevents_available)
-		return BadAccess; /* read-only */
 	else if (atom == prop_sendevents_enabled)
 		rc = LibinputSetPropertySendEvents(dev, atom, val, checkonly);
 	else if (atom == prop_left_handed)
 		rc = LibinputSetPropertyLeftHanded(dev, atom, val, checkonly);
-	else if (atom == prop_scroll_methods_available)
-		return BadAccess; /* read-only */
 	else if (atom == prop_scroll_method_enabled)
 		rc = LibinputSetPropertyScrollMethods(dev, atom, val, checkonly);
 	else if (atom == prop_scroll_button)
 		rc = LibinputSetPropertyScrollButton(dev, atom, val, checkonly);
-	else if (atom == prop_click_methods_available)
-		return BadAccess; /* read-only */
 	else if (atom == prop_click_method_enabled)
 		rc = LibinputSetPropertyClickMethod(dev, atom, val, checkonly);
 	else if (atom == prop_middle_emulation)
@@ -2205,12 +2297,16 @@ LibinputSetProperty(DeviceIntPtr dev, Atom atom, XIPropertyValuePtr val,
 		 atom == prop_tap_drag_lock_default ||
 		 atom == prop_calibration_default ||
 		 atom == prop_accel_default ||
+		 atom == prop_accel_profile_default ||
 		 atom == prop_natural_scroll_default ||
 		 atom == prop_sendevents_default ||
+		 atom == prop_sendevents_available ||
 		 atom == prop_left_handed_default ||
 		 atom == prop_scroll_method_default ||
+		 atom == prop_scroll_methods_available ||
 		 atom == prop_scroll_button_default ||
 		 atom == prop_click_method_default ||
+		 atom == prop_click_methods_available ||
 		 atom == prop_middle_emulation_default ||
 		 atom == prop_disable_while_typing_default)
 		return BadAccess; /* read-only */
@@ -2335,6 +2431,9 @@ LibinputInitAccelProperty(DeviceIntPtr dev,
 			  struct libinput_device *device)
 {
 	float speed = driver_data->options.speed;
+	uint32_t profile_mask;
+	enum libinput_config_accel_profile profile;
+	BOOL profiles[2] = {FALSE};
 
 	if (!libinput_device_config_accel_is_available(device))
 		return;
@@ -2351,6 +2450,68 @@ LibinputInitAccelProperty(DeviceIntPtr dev,
 						  LIBINPUT_PROP_ACCEL_DEFAULT,
 						  prop_float, 32,
 						  1, &speed);
+
+	profile_mask = libinput_device_config_accel_get_profiles(device);
+	if (profile_mask == LIBINPUT_CONFIG_ACCEL_PROFILE_NONE)
+		return;
+
+	if (profile_mask & LIBINPUT_CONFIG_ACCEL_PROFILE_ADAPTIVE)
+		profiles[0] = TRUE;
+	if (profile_mask & LIBINPUT_CONFIG_ACCEL_PROFILE_ADAPTIVE)
+		profiles[1] = TRUE;
+
+	prop_accel_profiles_available = LibinputMakeProperty(dev,
+							     LIBINPUT_PROP_ACCEL_PROFILES_AVAILABLE,
+							     XA_INTEGER, 8,
+							     ARRAY_SIZE(profiles),
+							     profiles);
+	if (!prop_accel_profiles_available)
+		return;
+
+	memset(profiles, 0, sizeof(profiles));
+
+	profile = libinput_device_config_accel_get_profile(device);
+	switch(profile) {
+	case LIBINPUT_CONFIG_ACCEL_PROFILE_ADAPTIVE:
+		profiles[0] = TRUE;
+		break;
+	case LIBINPUT_CONFIG_ACCEL_PROFILE_FLAT:
+		profiles[1] = TRUE;
+		break;
+	default:
+		break;
+	}
+
+	prop_accel_profile_enabled = LibinputMakeProperty(dev,
+							  LIBINPUT_PROP_ACCEL_PROFILE_ENABLED,
+							  XA_INTEGER, 8,
+							  ARRAY_SIZE(profiles),
+							  profiles);
+	if (!prop_accel_profile_enabled)
+		return;
+
+	memset(profiles, 0, sizeof(profiles));
+
+	profile = libinput_device_config_accel_get_default_profile(device);
+	switch(profile) {
+	case LIBINPUT_CONFIG_ACCEL_PROFILE_ADAPTIVE:
+		profiles[0] = TRUE;
+		break;
+	case LIBINPUT_CONFIG_ACCEL_PROFILE_FLAT:
+		profiles[1] = TRUE;
+		break;
+	default:
+		break;
+	}
+
+	prop_accel_profile_default = LibinputMakeProperty(dev,
+							  LIBINPUT_PROP_ACCEL_PROFILE_ENABLED_DEFAULT,
+							  XA_INTEGER, 8,
+							  ARRAY_SIZE(profiles),
+							  profiles);
+	if (!prop_accel_profile_default)
+		return;
+
 }
 
 static void
@@ -2483,7 +2644,7 @@ LibinputInitScrollMethodsProperty(DeviceIntPtr dev,
 							     LIBINPUT_PROP_SCROLL_METHODS_AVAILABLE,
 							     XA_INTEGER, 8,
 							     ARRAY_SIZE(methods),
-							     &methods);
+							     methods);
 	if (!prop_scroll_methods_available)
 		return;
 
@@ -2508,7 +2669,7 @@ LibinputInitScrollMethodsProperty(DeviceIntPtr dev,
 							  LIBINPUT_PROP_SCROLL_METHOD_ENABLED,
 							  XA_INTEGER, 8,
 							  ARRAY_SIZE(methods),
-							  &methods);
+							  methods);
 	if (!prop_scroll_method_enabled)
 		return;
 
@@ -2524,7 +2685,7 @@ LibinputInitScrollMethodsProperty(DeviceIntPtr dev,
 							  LIBINPUT_PROP_SCROLL_METHOD_ENABLED_DEFAULT,
 							  XA_INTEGER, 8,
 							  ARRAY_SIZE(methods),
-							  &methods);
+							  methods);
 	/* Scroll button */
 	if (libinput_device_config_scroll_get_methods(device) &
 	    LIBINPUT_CONFIG_SCROLL_ON_BUTTON_DOWN) {
@@ -2567,7 +2728,7 @@ LibinputInitClickMethodsProperty(DeviceIntPtr dev,
 							    LIBINPUT_PROP_CLICK_METHODS_AVAILABLE,
 							    XA_INTEGER, 8,
 							    ARRAY_SIZE(methods),
-							    &methods);
+							    methods);
 	if (!prop_click_methods_available)
 		return;
 
@@ -2589,7 +2750,7 @@ LibinputInitClickMethodsProperty(DeviceIntPtr dev,
 							 LIBINPUT_PROP_CLICK_METHOD_ENABLED,
 							 XA_INTEGER, 8,
 							 ARRAY_SIZE(methods),
-							 &methods);
+							 methods);
 
 	if (!prop_click_method_enabled)
 		return;
@@ -2612,7 +2773,7 @@ LibinputInitClickMethodsProperty(DeviceIntPtr dev,
 							 LIBINPUT_PROP_CLICK_METHOD_ENABLED_DEFAULT,
 							 XA_INTEGER, 8,
 							 ARRAY_SIZE(methods),
-							 &methods);
+							 methods);
 }
 
 static void
