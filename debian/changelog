@@ -1,10 +1,10 @@
-xserver-xorg-input-libinput (0.15.0-1) UNRELEASED; urgency=medium
+xserver-xorg-input-libinput (0.15.0-1) unstable; urgency=medium
 
   * New upstream release.
   * control: Bump libinput-dev build-dep.
   * install: Fix conf snippet source path.
 
- -- Timo Aaltonen <tjaalton@debian.org>  Tue, 27 Oct 2015 14:30:40 +0200
+ -- Timo Aaltonen <tjaalton@debian.org>  Wed, 28 Oct 2015 18:30:03 +0200
 
 xserver-xorg-input-libinput (0.14.0-1) unstable; urgency=medium
 
