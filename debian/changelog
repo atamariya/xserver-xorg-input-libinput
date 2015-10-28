@@ -1,6 +1,7 @@
 xserver-xorg-input-libinput (0.15.0-1) UNRELEASED; urgency=medium
 
   * New upstream release.
+  * control: Bump libinput-dev build-dep.
 
  -- Timo Aaltonen <tjaalton@debian.org>  Tue, 27 Oct 2015 14:30:40 +0200
 

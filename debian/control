@@ -6,7 +6,7 @@ Uploaders: Timo Aaltonen <tjaalton@debian.org>,
 Build-Depends:
  debhelper (>= 9),
  dh-autoreconf,
- libinput-dev (>= 0.21.0),
+ libinput-dev (>= 1.0.901),
  libudev-dev,
  pkg-config,
  quilt,
