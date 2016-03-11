@@ -28,6 +28,8 @@ Provides:
  ${xinpdriver:Provides}
 Description: X.Org X server -- libinput input driver
  This package provides the driver for input devices using libinput library.
+ It can handle keyboards, mice and touchpads, and essentially replaces the
+ separate -evdev and -synaptics drivers.
  .
  More information about X.Org can be found at:
  <URL:http://www.X.org>
