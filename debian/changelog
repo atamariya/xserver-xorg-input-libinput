@@ -1,5 +1,6 @@
-xserver-xorg-input-libinput (0.17.0-2) UNRELEASED; urgency=medium
+xserver-xorg-input-libinput (0.18.0-1) UNRELEASED; urgency=medium
 
+  * New upstream release.
   * control: Update the description to mention that this driver can
     replace -evdev and -synaptics.
   * control: Bump libinput-dev build-dependency.
