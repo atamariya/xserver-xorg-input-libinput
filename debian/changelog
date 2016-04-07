@@ -4,6 +4,7 @@ xserver-xorg-input-libinput (0.18.0-1) UNRELEASED; urgency=medium
   * control: Update the description to mention that this driver can
     replace -evdev and -synaptics.
   * control: Bump libinput-dev build-dependency.
+  * control: Bump Standards-Version to 3.9.7 (no changes).
 
  -- Timo Aaltonen <tjaalton@debian.org>  Fri, 11 Mar 2016 20:58:50 +0200
 
