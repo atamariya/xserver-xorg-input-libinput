@@ -1,4 +1,4 @@
-xserver-xorg-input-libinput (0.19.0-1) UNRELEASED; urgency=medium
+xserver-xorg-input-libinput (0.19.0-1) unstable; urgency=medium
 
   [ Andreas Boll ]
   * control: Fix Vcs-Git field.
@@ -6,7 +6,7 @@ xserver-xorg-input-libinput (0.19.0-1) UNRELEASED; urgency=medium
   [ Timo Aaltonen ]
   * New upstream release.
 
- -- Timo Aaltonen <tjaalton@debian.org>  Fri, 11 Mar 2016 20:58:50 +0200
+ -- Timo Aaltonen <tjaalton@debian.org>  Tue, 10 May 2016 11:37:55 +0300
 
 xserver-xorg-input-libinput (0.18.0-1) unstable; urgency=medium
 
