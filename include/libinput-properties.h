@@ -33,13 +33,13 @@
 /* Tap drag enabled/disabled: BOOL, 1 value */
 #define LIBINPUT_PROP_TAP_DRAG "libinput Tapping Drag Enabled"
 
-/* Tap drag default enabled/disabled: BOOL, 1 value */
+/* Tap drag default enabled/disabled: BOOL, 1 value, read-only */
 #define LIBINPUT_PROP_TAP_DRAG_DEFAULT "libinput Tapping Drag Enabled Default"
 
 /* Tap drag lock enabled/disabled: BOOL, 1 value */
 #define LIBINPUT_PROP_TAP_DRAG_LOCK "libinput Tapping Drag Lock Enabled"
 
-/* Tap drag lock default enabled/disabled: BOOL, 1 value */
+/* Tap drag lock default enabled/disabled: BOOL, 1 value, read-only */
 #define LIBINPUT_PROP_TAP_DRAG_LOCK_DEFAULT "libinput Tapping Drag Lock Enabled Default"
 
 /* Calibration matrix: FLOAT, 9 values of a 3x3 matrix, in rows */
@@ -140,6 +140,6 @@
 
 /* Horizontal scroll events enabled: BOOL, 1 value (0 or 1).
  * If disabled, horizontal scroll events are discarded */
-#define LIBINPUT_PROP_HORIZ_SCROLL_ENABLED "libinput Horizonal Scroll Enabled"
+#define LIBINPUT_PROP_HORIZ_SCROLL_ENABLED "libinput Horizontal Scroll Enabled"
 
 #endif /* _LIBINPUT_PROPERTIES_H_ */
