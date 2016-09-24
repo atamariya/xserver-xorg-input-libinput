@@ -1,0 +1,1890 @@
+commit 9b9fa156020c7859bea3b6196769f390bdabf1ee
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Wed Sep 14 07:17:51 2016 +1000
+
+    xf86-input-libinput 0.19.1
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit 0d8d6f15e2961291c2bbf977913ba18ff20bad63
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Tue Sep 13 14:37:07 2016 +1000
+
+    Correct the horizontal scroll property name
+    
+    Clear typo. Not bothering to be backwards compatible here, anything that uses
+    the #define will update on rebuild, anyone using the string directly should've
+    told me about the typo...
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+    Reviewed-by: Hans de Goede <hdegoede@redhat.com>
+    (cherry picked from commit 2f1df46ba9ef91c079f6485c04ac7c5515d6057a)
+
+commit e85ec72025bf003cf73948d02297bf46159f1eac
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Tue Aug 16 09:34:36 2016 +1000
+
+    Comment two read-only properties as such
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+    (cherry picked from commit b508c54fa0d569beb00ccba3d5b27ca993aae94d)
+
+commit 758e9037b56a502f90a032b2438dc307334ca190
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Mon May 9 07:58:51 2016 +1000
+
+    Discard buttons >= 256
+    
+    https://bugs.freedesktop.org/show_bug.cgi?id=95295
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+    (cherry picked from commit ce85432f41549cd6f3c6e0c5e2e39d0c1aee8dfd)
+
+commit f9b6fa21df735e9a68c5f527afc422f519d6002c
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Thu Apr 28 13:43:49 2016 +1000
+
+    xf86-input-libinput 0.19.0
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit 3f569ec493e738242da97afe30f7dd2a3b2b834d
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Tue Apr 26 15:45:18 2016 +1000
+
+    conf: rename to 60-libinput.conf
+    
+    60 sorts higher than the other drivers (evdev has 10, synaptics, wacom and
+    others have 50) so we keep the same order.
+    
+    This is part of a two-step solution, the other half is renaming the
+    xf86-input-wacom's config snippet to sort higher than libinput's.
+    
+    Currently libinput picks up devices that are (for now) destined to the wacom
+    driver. Since the wacom driver is more of a leaf package than libinput, the
+    best option here is to make the wacom driver sort higher and let users
+    uninstall it when not needed. To avoid crowding the 90-* space where users
+    usually have custom config snippets, drop libinput down to 60 and bump wacom
+    up.
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+    Acked-by: Jason Gerecke <jason.gerecke@wacom.com>
+
+commit 602bb8eefac929501b2cd5e5bd4a9838d1903774
+Author: Stanislav Ochotnicky <sochotnicky@redhat.com>
+Date:   Wed Oct 14 10:43:34 2015 +1000
+
+    Fix implicit declaration of function 'xf86Msg' in xf86libinput.c
+    
+    Addition of xf86.h header fixes compilation issues in some cases.
+    
+    See: https://bugs.gentoo.org/show_bug.cgi?id=560970
+    
+    Signed-off-by: Stanislav Ochotnicky <sochotnicky@redhat.com>
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit 13726f404f872b8baee507e6b3d4931f1bda2254
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Thu Apr 7 13:31:28 2016 +1000
+
+    xf86-input-libinput 0.18.0
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit 5e7ee73fe24d53cba6a915223be53e0abcdaa70d
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Thu Dec 3 15:58:49 2015 +1000
+
+    Support art pen rotation
+    
+    The art pen is a normal pen, but it does provide a rotation axis.
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit 4564a92d59be39378170a2254ae1affb151a4757
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Thu Dec 3 15:41:30 2015 +1000
+
+    Support the mouse/lens tool
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit 0c2bcd0358d1107bf61ac8ff6dcb156742eb1bc6
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Thu Dec 3 15:24:24 2015 +1000
+
+    Add support for the airbrush tool axes
+    
+    Same axes as the pen, but axis number 6 is the wheel (which really is a
+    slider)
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit b4541e4dff7248f1ce8894d8f950122785353d5b
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Thu Nov 12 11:50:47 2015 +1000
+
+    Add support for tablet tools
+    
+    Use two new internal capabilities, CAP_TABLET and CAP_TABLET_TOOL. If a
+    libinput tablet device is added, add an X device without any classes. This
+    device will not send events, but once we have pad support in libinput we
+    may be able to this the pad device.
+    
+    When a tool comes into proximity, create a new X device for that serial number
+    and start sending events through it. Since the X device only represents a
+    single serial number/type combination, some of the wacom-specific
+    configuration options fall away. This only matters in the case of multiple
+    tools, in which case a per-tool configuration is preferable anyway, so we
+    don't lose anything here.
+    
+    Gesture support only applied to the touch parts on the device, we don't
+    deal with this here specifically - that event node is handled by libinput as
+    touchscreen or touchpad.
+    
+    This already works with GIMP and clients that don't rely on any
+    wacom-driver-specific properties. Configuration clients like
+    gnome-settings-daemon will need to change to handle new properties, to be
+    added as we go along.
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit 8136113139dd2a27fcfa4552da89aa110bc8fbe3
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Fri Feb 26 15:57:48 2016 +1000
+
+    xf86-input-libinput 0.17.0
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit 202eb68dc061510d57900d29b3a76fe2ed811998
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Thu Jan 28 15:02:54 2016 +1000
+
+    Fix compiler warnings about missing tablet event cases
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit e8f5394b0734db41abd15ab72457aea99c25d9ab
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Wed Jan 27 11:04:40 2016 +1000
+
+    Add property/option for enabling/disabling tap-n-drag
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+    Reviewed-by: Hans de Goede <hdegoede@redhat.com>
+
+commit 20f5269a29b6f3697984872d689fbe8589e53b08
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Wed Jan 27 11:12:48 2016 +1000
+
+    Fix default tapping drack lock property value
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit 3dacb28b206098f261d731195ed7556fc83837ed
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Tue Nov 24 13:00:52 2015 +1000
+
+    Allow hotplugging a device immediately
+    
+    This splits the hotplugging code up so we can use it through a callback but
+    also as an immediate call that gives us back the device just hotplugged. Also
+    added is the ability to add extra options to the device.
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit db8e73141c3ebb09c19e95aab5dee46d331835df
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Mon Nov 23 15:31:59 2015 +1000
+
+    Change creating subdevices to something more generic
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit 0d1851a000c5a80ba9b5787f516d2d72c62ce35e
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Wed Dec 23 13:53:38 2015 +1000
+
+    xf86-input-libinput 0.16.0
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit ad8483b91387e99282a9b5a8360e8de7eed70257
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Tue Dec 15 13:20:55 2015 +1000
+
+    Drain the fd after opening
+    
+    Make sure we don't send any events that may have been enqueued before we
+    initialized ourselves. Specifically, if we're using systemd-logind the fd
+    remains open when we disable/enable the device, allowing events to queue up on
+    the fd. These events are then replayed once the device is re-opened.
+    
+    This is not the case when VT-switching, in that case logind closes the fd for
+    us.
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+    Reviewed-by: Keith Packard <keithp@keithp.com>
+
+commit 1f43f3921f6ceebd9a0cb92ef998a930d5fc3a3e
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Wed Nov 11 10:10:58 2015 +1000
+
+    Split mixed pointer/keyboard devices into two separate X devices
+    
+    The server struggles with devices that are both, the protocol (especially XI2)
+    requires a fairly strict separation of pointer vs keyboard devices. Though the
+    server has a couple of hacks to route events correctly, mixed
+    devices still experience bugs like [1].
+    
+    Instead of advertising the device as a single mixed device, split the device
+    into two X devices, one with only a pointer/touch component, one with only a
+    keyboard component. This ensures that the device is effectively attached to
+    both the VCP and the VCK, something the XI2 protocol doesn't really allow.
+    
+    This patch drops the keyboard capability on a mixed device, duplicates the
+    input options and attributes and queues a NewInputDeviceRequest call. The new
+    device only has the keyboard capability but is otherwise unchanged. The
+    wacom driver has used this approach for years.
+    
+    The WorkProc is necessary to avoid inconsistent state, the server doesn't
+    handle a NewInputDeviceRequest during PreInit well.
+    
+    The approach:
+    During pre-init we create a struct xf86libinput_device with the
+    libinput_device and a unique ID. The child device has that ID added to the
+    options and will look for the other device during its pre-init. The two
+    devices then share the xf86libinput_device struct.
+    
+    We only have a single epollfd for all devices  and the server calls read_input
+    on the first device in the list with the epollfd as pInfo->fd. That shared
+    struct is used as the userdata on the libinput_device we get back from the
+    event, and each device is in the xorg_list device_list of that shared struct.
+    We loop through those to find the ones with the right capabilities and
+    post the event through that device.
+    
+    Since devices can be enabled and disabled independently, the rest of the code
+    makes sure that we only ever add the device to libinput when the first shared
+    device is enabled, and remove it accordingly.
+    
+    The server uses pInfo->major/minor to detect if another device is using the
+    same path for a logind-controlled fd. If so, it reuses that device's
+    pInfo->fd and sets the "fd" option to that value. That pInfo->fd is the
+    libinput epollfd though, not the actual device fd.
+    
+    This doesn't matter for us, since we manage the fds largely ourselves and the
+    pInfo->fd we use is the epollfd anyway. On unplug however, the udev code
+    triggers a device removal for all devices, including the duplicated ones. When
+    we disable device, we restore the pInfo->fd from the "fd" option so that the
+    server can request logind to close the fd.
+    
+    That only works if the "fd" option is correct, otherwise the server asks
+    logind to close the epollfd and everyone is unhappy.
+    
+    [1] https://bugs.freedesktop.org/show_bug.cgi?id=49950
+    
+    https://bugs.freedesktop.org/show_bug.cgi?id=92896
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+    Reviewed-by: Hans de Goede <hdegoede@redhat.com>
+
+commit 83dfd31ec8ec2596648c33059fffb93b19691fae
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Fri Nov 20 10:51:38 2015 +1000
+
+    Revert "Split mixed pointer/keyboard devices into two separate X devices"
+    
+    When using logind, this causes the server to hang when a split device is
+    unplugged. The reason is mostly in the server, when open the device by
+    requesting the logind fd, the server loops through the device list to check if
+    any other device has the same major/minor (see systemd_logind_take_fd()) and
+    returns the pInfo->fd for that device instead of requesting the fd again from
+    logind.
+    
+    For libinput devices, the pInfo->fd is the epollfd, not the actual device, so
+    our second device gets the epollfd assigned. When the devices are removed, we
+    keep the device fd open and release the epollfd through logind.
+    
+    This reverts commit c943739a2bfd4c380db0b21bc35b73deb7496c8a.
+
+commit c943739a2bfd4c380db0b21bc35b73deb7496c8a
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Wed Nov 11 10:10:58 2015 +1000
+
+    Split mixed pointer/keyboard devices into two separate X devices
+    
+    The server struggles with devices that are both, the protocol (especially XI2)
+    requires a fairly strict separation of pointer vs keyboard devices. Though the
+    server has a couple of hacks to route events correctly, mixed
+    devices still experience bugs like [1].
+    
+    Instead of advertising the device as a single mixed device, split the device
+    into two X devices, one with only a pointer/touch component, one with only a
+    keyboard component. This ensures that the device is effectively attached to
+    both the VCP and the VCK, something the XI2 protocol doesn't really allow.
+    
+    This patch drops the keyboard capability on a mixed device, duplicates the
+    input options and attributes and queues a NewInputDeviceRequest call. The new
+    device only has the keyboard capability but is otherwise unchanged. The
+    wacom driver has used this approach for years.
+    
+    The WorkProc is necessary to avoid inconsistent state, the server doesn't
+    handle a NewInputDeviceRequest during PreInit well.
+    
+    The approach:
+    During pre-init we create a struct xf86libinput_device with the
+    libinput_device and a unique ID. The child device has that ID added to the
+    options and will look for the other device during its pre-init. The two
+    devices then share the xf86libinput_device struct.
+    
+    We only have a single epollfd for all devices  and the server calls read_input
+    on the first device in the list with the epollfd as pInfo->fd. That shared
+    struct is used as the userdata on the libinput_device we get back from the
+    event, and each device is in the xorg_list device_list of that shared struct.
+    We loop through those to find the ones with the right capabilities and
+    post the event through that device.
+    
+    Since devices can be enabled and disabled independently, the rest of the code
+    makes sure that we only ever add the device to libinput when the first shared
+    device is enabled, and remove it accordingly.
+    
+    [1] https://bugs.freedesktop.org/show_bug.cgi?id=49950
+    
+    https://bugs.freedesktop.org/show_bug.cgi?id=92896
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+    Reviewed-by: Hans de Goede <hdegoede@redhat.com>
+
+commit a72e96538af2c4a94ead48f96e8e59a2a4980a64
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Fri Nov 13 09:39:29 2015 +1000
+
+    Add a helper function for the driver context initialization
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+    Reviewed-by: Hans de Goede <hdegoede@redhat.com>
+
+commit b1a9bea6079550fa8be4fa0b2e18ea810b0ea68c
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Wed Nov 11 09:12:33 2015 +1000
+
+    Copy the device capabilities to the X driver struct
+    
+    And use those copied caps instead of the direct device capability calls.
+    
+    No functional changes at this point, this is preparation work for selectively
+    disabling capabilities on a device.
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+    Reviewed-by: Hans de Goede <hdegoede@redhat.com>
+
+commit a6aad69a97c68fa96e0a836e735b1a7f319b92df
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Wed Nov 11 09:02:22 2015 +1000
+
+    Split type_name detection out into a helper function
+    
+    No functional changes
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+    Reviewed-by: Hans de Goede <hdegoede@redhat.com>
+
+commit 6fa5f30129ea770bcc5e50b0785a993a8254a418
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Tue Nov 17 14:59:22 2015 +1000
+
+    Unref the libinput context on pre_init failure
+    
+    A device that fails pre_init has a ref to the libinput context but may not
+    have a pInfo->private. For those devices we never call libinput_unref() and
+    the libinput struct never gets freed.
+    
+    Thus if at least one device didn't pass pre_init, we never cleaned up after
+    ourselves.
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+    Reviewed-by: Hans de Goede <hdegoede@redhat.com>
+
+commit c53dde1a503ace84f755a2a8d0022fba48ad89c2
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Fri Nov 13 10:48:02 2015 +1000
+
+    Don't fail DEVICE_CLOSE
+    
+    We're not doing anything here, so no reason to fail.
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit d7331f6e34cedde2a1b8159d58aec0f68796f180
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Fri Nov 13 13:01:45 2015 +1000
+
+    Remove unused server_fds list
+    
+    Obsolete as of 353c52f2bec03
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit fb56f6d7a5139445a36b3468ef7dc61d1c127335
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Fri Nov 13 10:02:16 2015 +1000
+
+    Set the device to NULL after unref
+    
+    No real effect in the current code, but it adds a bit of safety.
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit c8861d2a2fd9ef875501a05b8c894045ce96ecc6
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Thu Nov 12 10:02:38 2015 +1000
+
+    Plug two memory leaks
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit 44f4b2ed7075d424e3621f30815e11875b364c27
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Tue Oct 27 17:08:59 2015 +1000
+
+    xf86-input-libinput 0.15.0
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit 0163482e22ad65ec51e3636cf31f9f39e29ff709
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Thu Sep 3 18:03:00 2015 +1000
+
+    Add property support for the accel profiles
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit 80c356f58fed47080eb6fa5756a122dbe14e5f6f
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Fri Sep 18 00:27:13 2015 +1000
+
+    conf: install the libinput xorg.conf.d snippet
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit 1645a79c343ea3cf8bbd71a36e9106b22e541c71
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Fri Sep 18 00:28:36 2015 +1000
+
+    conf: don't hook onto tablets and joysticks
+    
+    If we install the config file by default, we shouldn't use libinput for
+    devices we know we can't handle.
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit b7f8db12a3389affaa16c584e03d452624ea8bf8
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Fri Sep 18 00:24:13 2015 +1000
+
+    conf: rename 99-libinput.conf to 90-libinput.conf
+    
+    This way it still sorts after the usual subjects, but it's easier to stack
+    extra config in afterwards.
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit 6abd341279ea54e7c0ce56b1a2ad310a496be2b5
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Thu Sep 3 17:42:20 2015 +1000
+
+    Fix invalid pointer passed to the properties
+    
+    Takes a void*, not a void**
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit 19b42f242dddef7d6381b74b13930d6dd2734898
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Thu Sep 3 17:33:40 2015 +1000
+
+    Move the read-only properties into the same condition
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit f48b64c8cd6f280ba8c589842ec2522a4bfe9b5c
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Mon Aug 31 13:27:09 2015 +1000
+
+    xf86-input-libinput 0.14.0
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit b55239ef2552c43efd4c4fb7d39e22c255dd4e6d
+Author: Yomi0 <abyomi0@gmail.com>
+Date:   Sun Aug 30 23:14:25 2015 -0400
+
+    Fix typo in libinput.man
+    
+    Correct typo. Draging to dragging.
+
+commit 9563334dda3c5563550fb2534b228c47216ec008
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Thu Aug 13 11:03:44 2015 +1000
+
+    Use xf86OpenSerial instead of a direct open() call
+    
+    This will transparently handle server-side fds for us.
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+    Reviewed-by: Hans de Goede <hdegoede@redhat.com>
+    Reviewed-by: Martin Pieuchot <mpi@openbsd.org>
+
+commit 353c52f2bec035f04c136c8f3b28571e2a4515df
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Thu Aug 13 10:59:39 2015 +1000
+
+    Revamp server fd opening
+    
+    The server already stores the server-fd in the options, so we only need to run
+    through the list of current devices, find a match and extract that fd from the
+    options. Less magic in our driver and it gives us a pInfo handle in
+    open_restricted which we'll can use for xf86OpenSerial().
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+    Reviewed-by: Hans de Goede <hdegoede@redhat.com>
+    Reviewed-by: Martin Pieuchot <mpi@openbsd.org>
+
+commit f139f1424936abdc43b2c8611d569b496ffa4a68
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Wed Aug 12 10:15:31 2015 +1000
+
+    Add an option to disable horizontal scrolling
+    
+    libinput always has horizontal scrolling enabled and punts the decision when
+    to scroll horizontally to the toolkit/widget. This is the better approach, but
+    while we have a stack that's not ready for that, and in the X case likely
+    never will be fully ready provide an option to disable horizontal scrolling.
+    
+    This option doesn't really disable horizontal scrolling, it merely discards
+    any horizontal scroll delta. libinput will still think it's scrolling.
+    
+    https://bugs.freedesktop.org/show_bug.cgi?id=91589
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+    Reviewed-by: Hans de Goede <hdegoede@redhat.com>
+
+commit e3a888c3ab0f4cc42943b0216852cba110c3dad2
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Fri Aug 7 15:19:12 2015 +1000
+
+    Add drag lock support
+    
+    First, why is this here and not in libinput: drag lock should be implemented
+    in the compositor (not in libinput) so it can provide feedback when it
+    activates and grouped in with other accessibility features. That will work for
+    Wayland but in X the compositor cannot filter button events - only the server
+    and the drivers can.
+    
+    This patch adds mostly the same functionality that evdev provides with two
+    options on how it works:
+    * a single button number configures the given button to lock the next button
+      pressed in a logically down state until a press+ release of that same button
+      again
+    * a set of button number pairs configures each button with the to-be-locked
+      logical button, i.e. a pair of "1 3" will hold 3 logically down after a
+      button 1 press
+    
+    The property and the xorg.conf options take the same configuration as the
+    evdev driver (though the property has a different prefix, libinput instead of
+    Evdev).
+    
+    The behavior difference to evdev is in how releases are handled, evdev sends
+    the release on the second button press event, this implementation sends the
+    release on the second release event.
+    
+    https://bugs.freedesktop.org/show_bug.cgi?id=85577
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+    Reviewed-by: Hans de Goede <hdegoede@redhat.com>
+
+commit cd61ddb040af288cf0e5a3fcccab3d390e3f1cab
+Author: Martin Pieuchot <mpi@openbsd.org>
+Date:   Tue Aug 11 12:58:33 2015 +0200
+
+    Remove unneeded header, epoll(7) interface is not directly used.
+    
+    Signed-off-by: Martin Pieuchot <mpi@openbsd.org>
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit a19988005750f56254977f55bd3d11e944853176
+Author: Martin Pieuchot <mpi@openbsd.org>
+Date:   Tue Aug 11 12:37:51 2015 +0200
+
+    Rename a local variable to not shadow the BSD strmode(3) function.
+    
+    Signed-off-by: Martin Pieuchot <mpi@openbsd.org>
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit cc57eecd720d0b002499bb81ada1f84515b0b49e
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Fri Aug 7 16:34:32 2015 +1000
+
+    gitignore: add patterns for automake test suite and misc other bits
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit fe58cff48b6daa26b2d6f8a3b72d120db6fab642
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Fri Aug 7 14:48:35 2015 +1000
+
+    Rename main source file to x86libinput.c
+    
+    To avoid conflict and confusion with libinput's sources. This was originally
+    triggered by needing a header file for the driver which cannot be named
+    libinput.h. That need went away after other refacturing, but we might as well
+    rename it now, sooner or later we'll need a xf86libinput.h file.
+    
+    Can't do much about the libinput-properties header though, not worth breaking
+    other projects and it's namespaced into /usr/include/xorg anyway.
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit 4b2bed6912d79f0104770d7956f14b4448c8b0ed
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Tue Aug 4 17:08:22 2015 +1000
+
+    xf86-input-libinput 0.13.0
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit 223be9f62bc614c4bfa2836c5b0aaded70cadf9c
+Author: Stephen Chandler Paul <cpaul@redhat.com>
+Date:   Sun Aug 2 14:18:10 2015 -0400
+
+    Add a property for Disable While Typing
+    
+    Signed-off-by: Stephen Chandler Paul <cpaul@redhat.com>
+    Reviewed-by: Peter Hutterer <peter.hutterer@who-t.net>
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit d3ee745a2461c09c86916f2ecf97426b6145ee09
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Tue Jul 21 11:21:47 2015 +1000
+
+    man: minor man page improvements
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit b550b70a002e0f1645a3ac6bc80d367bd72b4b7a
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Tue Jul 21 11:16:06 2015 +1000
+
+    Fix compiler warnings about touchpad gestures
+    
+    We don't do anything with them though.
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit 254b1f27a07f2372aa0c70674e8be5a02d068feb
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Tue Jul 14 16:18:38 2015 +1000
+
+    xf86-input-libinput 0.12.0
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit bfedf7dbac7e92479629713c3f5622e4f19de1f4
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Wed Jul 8 10:31:30 2015 +1000
+
+    Add a property for tap drag lock
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+    Reviewed-by: Hans de Goede <hdegoede@redhat.com>
+
+commit 9c5cf971439292661e1f3055ef882526baae6310
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Mon Jun 15 10:17:20 2015 +1000
+
+    Support buttons > BTN_BACK on mice
+    
+    https://bugzilla.redhat.com/show_bug.cgi?id=1230945
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit 449b496a3abd2860ada3a27a4d23efc28b87448d
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Fri Jun 5 13:40:31 2015 +1000
+
+    xf86-input-libinput 0.11.0
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit d4e0b5420ff2af2e790f12d10996f93ec6066b4a
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Mon Jun 1 11:41:09 2015 +1000
+
+    Fix missing scroll methods default/scroll button property
+    
+    Even if no scroll method is enabled by default, we still want those
+    properties.
+    
+    Introduced in 8d4e03570c.
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit 19c91044e44dd31deaeb638a919c64e9a9182448
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Tue May 5 14:17:10 2015 +1000
+
+    Use the new unaccelerated valuator ValuatorMask features
+    
+    SDL Games like openarena rely on relative input that's handled by the DGA code
+    in the server. That code casts the driver's input data to int and sends it to
+    the client. libinput does pointer acceleration for us, so sending any deltas
+    of less than 1 (likely for slow movements) ends up being 0.
+    
+    Use the new ValuatorMask accelerated/unaccelerated values to pass the
+    unaccelerated values along, the server can then decide what to do with it.
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+    Reviewed-by: Hans de Goede <hdegoede@redhat.com>
+
+commit 3d6afca975e5c54d458974ca2e9ada3df209587c
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Wed May 20 13:22:45 2015 +1000
+
+    Only init abs axes if we don't have acceleration
+    
+    A lot of devices (mainly MS input devices) have abs axes on top of the
+    relative axes. Those axes are usually mute but with the current code we set up
+    absolute axes for those devices. Relative events are then scaled by the server
+    which makes the device appear slow.
+    
+    As an immediate fix always prefer relative axes and only set up absolute axes
+    if the device has a calibration matrix but no pointer acceleration.
+    This may mess up other devices where the relative axes are dead, we'll deal
+    with this when it comes.
+    
+    https://bugs.freedesktop.org/show_bug.cgi?id=90322
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+    Reviewed-by: Hans de Goede <hdegoede@redhat.com>
+
+commit 158e3264cefa9e6ac3e2218027b212237b039ce6
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Thu May 21 09:52:40 2015 +1000
+
+    xf86-input-libinput 0.10.0
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit 006c80263027d5c5bc4e26d1b61a412f8a444a2d
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Wed May 20 13:37:06 2015 +1000
+
+    Group scroll distances into a struct
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit d6ce065cea25785a8d03d27d723846e583c55e3b
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Wed Apr 29 09:30:14 2015 +1000
+
+    Add option "ButtonMapping" (#90206)
+    
+    With a long entry in the man page to detail what this option does.
+    Specifically, it's the xorg.conf equivalent to XSetPointerMapping(3), it
+    doesn't do any physical button remappings, merely the logical ones. If the
+    physical button isn't mapped to the right logical button by default, that's
+    either a libiput bug or an xkcd 1172 issue.
+    
+    X.Org Bug 90206 <http://bugs.freedesktop.org/show_bug.cgi?id=90206>
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+    Reviewed-by: Hans de Goede <hdegoede@redhat.com>
+
+commit b9a21505766a972016f18a48437411d88b25bd8b
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Wed Apr 29 09:18:44 2015 +1000
+
+    man: add two linebreaks to make things easier to visually parse
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+    Reviewed-by: Hans de Goede <hdegoede@redhat.com>
+
+commit 9356471f3f975aeb47d0cca43f31317af9ba384a
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Wed Apr 29 08:18:13 2015 +1000
+
+    Move the option parsing into helper functions
+    
+    No functional changes, though I did move a free() up a bit in the process (see
+    sendevents parsing).
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+    Reviewed-by: Hans de Goede <hdegoede@redhat.com>
+
+commit d5fa03c3433637c0fa8cbbfb38dadcf384f06ac3
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Thu Apr 23 17:48:44 2015 +1000
+
+    Add a property for middle button emulation
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+    Reviewed-by: Hans de Goede <hdegoede@redhat.com>
+
+commit 446401bea9d0335273963f476e897d8c4916420e
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Thu Apr 23 12:20:12 2015 +1000
+
+    xf86-input-libinput 0.9.0
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit 8d4e03570cbdbb53bae57452614cbe45b6eb46f8
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Mon Mar 16 09:33:17 2015 +1000
+
+    Add "libinput something Default" properties
+    
+    A client or xorg.conf setting may change the property but once changed it
+    cannot be reset by a client to the original state without knowledge about the
+    device.
+    
+    Export the various libinput_...get_default() functions as properties.
+    
+    https://bugs.freedesktop.org/show_bug.cgi?id=89574
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+    Reviewed-by: Hans de Goede <hdegoede@redhat.com>
+
+commit 0c5620a29c6f08b824457f5e6ce3c4e25c1c136e
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Mon Mar 16 09:40:36 2015 +1000
+
+    Add a helper function for making properties
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+    Reviewed-by: Hans de Goede <hdegoede@redhat.com>
+
+commit fb50cef7002392eb16537fe8f0cdffbc2ab03a7a
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Wed Mar 18 09:10:38 2015 +1000
+
+    man: update the property list in the man page
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit 64a0f870e02f99f2204cc5568c3eea4d8a16e80d
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Wed Mar 18 08:58:59 2015 +1000
+
+    Fix a couple of -Wformat warnings
+    
+    unsigned int vs int
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit e362e4dc4c7662902c3e467d9ef9686bf63acbbd
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Mon Mar 16 10:35:37 2015 +1000
+
+    cosmetic: drop duplicate empty lines
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit 7b3b04b5186abf9b3ebb7bc9db1c0bf10635d84c
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Fri Mar 6 15:32:58 2015 +1000
+
+    xf86-input-libinput 0.8.0
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit 4ac531bdf6577ab4701b38d333626593abbf327d
+Author: Boyan Ding <boyan.j.ding@gmail.com>
+Date:   Fri Mar 6 10:22:15 2015 +0800
+
+    Initialize variable 'path' to NULL to silence warning
+    
+      CC       libinput.lo
+    libinput.c: In function 'xf86libinput_pre_init':
+    libinput.c:1222:2: warning: 'path' may be used uninitialized in this
+    function [-Wmaybe-uninitialized]
+      free(path);
+      ^
+    
+    Signed-off-by: Boyan Ding <boyan.j.ding@gmail.com>
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit 7ec0bf7ae2e3753d7e4989495bae80057f39508e
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Wed Mar 4 14:46:29 2015 +1000
+
+    Up the scroll dist value for touchpads
+    
+    For source FINGER and CONTINUOUS, the axis value is the same as relative
+    motion - but scrolling in X usually doesn't have the same speed as finger
+    movement, it's a lot coarser.
+    
+    We don't know ahead of time where we'll get the scroll events from. Set a
+    default scroll distance of 15 and multiply any wheel clicks we get by this
+    value.
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+    Reviewed-by: Hans de Goede <hdegoede@redhat.com>
+
+commit 2ffd8d14be6e713e7f26b8b220da076171efe427
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Mon Mar 2 10:42:38 2015 +1000
+
+    Apply the configuration before initalizing the property
+    
+    Otherwise the property contains the device defaults, rather than the xorg.conf
+    options.
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit e9a0ee69cb81dea2280c0ae2eeea371c70d7911c
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Mon Mar 2 10:42:03 2015 +1000
+
+    Don't unref the device until we're done with it in DEVICE_INIT
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit fb6506f5eeecb6f7def8a11cff58b89b78c89768
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Thu Feb 26 17:03:15 2015 +1000
+
+    Add properties to change the click method (#89332)
+    
+    X.Org Bug 89332 <http://bugs.freedesktop.org/show_bug.cgi?id=89332>
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+    Reviewed-by: Hans de Goede <hdegoede@redhat.com>
+
+commit 275c71286652f5801c972095ed2142c3752306ea
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Thu Feb 26 16:50:50 2015 +1000
+
+    Split out property init into helper functions
+    
+    Makes the code less messy. Only functional change is that if one property
+    fails to initialize we'll now continue with the others. Previously the first
+    failed property would prevent any other property init.
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+    Reviewed-by: Hans de Goede <hdegoede@redhat.com>
+
+commit 2455f0d03bf786ca4202e527d658b013db98084e
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Wed Feb 25 13:05:03 2015 +1000
+
+    Use the new libinput_device_pointer_has_button
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit 98ae01b9ae8616d3c2047f5510205aa4e3bc52b5
+Author: Olivier Fourdan <ofourdan@redhat.com>
+Date:   Wed Feb 25 11:49:19 2015 +0100
+
+    Ignore property changes if the device is disabled
+    
+    If the device is present but disabled, the server will still call into
+    SetProperty. We don't have a libinput device to back it up in this case,
+    causing a null-pointer dereference.
+    
+    This is a bug specific to this driver that cannot easily be fixed. All
+    other drivers can handle property changes even if no device is present,
+    here we rely on libinput to make the final call. But without a device
+    path/fd we don't have a libinput reference.
+    
+    The protocol doesn't mention this case, so let's pick BadMatch as the
+    least wrong error code. And put a warning in the log, this needs a
+    workaround in the client.
+    
+    Also, if we get here and the device is on, then that's definitely a bug,
+    warn about that.
+    
+    https://bugs.freedesktop.org/show_bug.cgi?id=89296
+    
+    Signed-off-by: Olivier Fourdan <ofourdan@redhat.com>
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit 2600a4a352185f7d4d828f7d223628e4bb0f2aa3
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Wed Feb 25 07:48:18 2015 +1000
+
+    Fix off-by-one error in buttonmap initialization (#89300)
+    
+    X.Org Bug 89300 <http://bugs.freedesktop.org/show_bug.cgi?id=89300>
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit 278a685c5a643fc6c5042e15e063721b09e85282
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Tue Feb 24 14:45:12 2015 +1000
+
+    xf86-input-libinput 0.7.0
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit 875f1696b780862886c75cd88b29fbc933ea7a1b
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Wed Feb 4 14:08:46 2015 +1000
+
+    Only apply left-handed/scroll button configuration when it's available
+    
+    https://bugs.freedesktop.org/show_bug.cgi?id=88961
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit 45e9b6c64b9bf0a84e3ee0e1fbb8f9f4efc3a8a0
+Author: Friedrich Schöller <code@schoeller.se>
+Date:   Sat Jan 24 02:20:22 2015 +0100
+
+    Reapply configuration at DEVICE_ON
+    
+    The driver ignored my xorg configuration. Maybe I am doing something wrong,
+    but I tried to track down the error and came up with this solution.
+    
+    The device is closed after DEVICE_INIT so we need to apply configuration
+    options at DEVICE_ON.
+    
+    Signed-off-by: Friedrich Schöller <code@schoeller.se>
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit dcdf1e24c8427ecac3bff315b85e8273b849a1da
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Wed Jan 28 10:48:50 2015 +1000
+
+    Formatting fix
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit 64e1b145982a9a9870fee8ce9e4404662151319e
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Tue Jan 27 10:08:32 2015 +1000
+
+    xf86-input-libinput 0.6.0
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit e729451bb1ea54209e600acc801ce88d46784aa2
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Tue Jan 27 07:49:53 2015 +1000
+
+    Swap button labels for back/forward to align with linux/input.h
+    
+    We just forward the kernel buttons, so this should be in the same order.
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit 7d73602c4b60aedee41986362cee6a460ec91a92
+Author: Olivier Fourdan <ofourdan@redhat.com>
+Date:   Tue Jan 20 13:54:10 2015 +0100
+
+    Move properties to a separate header
+    
+    And install the header as part of the SDK, so that applications interfacing
+    with the libinput driver do not have to copy paste all the properties' names.
+    
+    Signed-off-by: Olivier Fourdan <ofourdan@redhat.com>
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit 00b96de351404fc22e8f16610df667f7f35c448f
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Wed Jan 21 11:56:32 2015 +1000
+
+    Revert "libinput-drv: Move properties to a separate header"
+    
+    Missing the pkg-config file, updated patch coming up.
+    
+    This reverts commit 8ceed9c73dfca991b9ffc639b7db8cdfc48fe4d9.
+
+commit 8ceed9c73dfca991b9ffc639b7db8cdfc48fe4d9
+Author: Olivier Fourdan <ofourdan@redhat.com>
+Date:   Tue Jan 20 12:01:10 2015 +0100
+
+    libinput-drv: Move properties to a separate header
+    
+    And install the header as part of the SDK, so that applications interfacing
+    with the libinput driver do not have to copy paste all the properties' names.
+    
+    Signed-off-by: Olivier Fourdan <ofourdan@redhat.com>
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit e4cd6cef9154a330646cfcaad4e78fcef3db3917
+Author: Olivier Fourdan <ofourdan@redhat.com>
+Date:   Tue Jan 20 12:01:09 2015 +0100
+
+    libinput-drv: Add autogen.sh
+    
+    Signed-off-by: Olivier Fourdan <ofourdan@redhat.com>
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit 7bc662d0b48e718cf30c4e4b1b32c1c8a557e091
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Mon Jan 19 14:36:59 2015 +1000
+
+    Remove unused define
+    
+    Obsolete since 2348a6812a3cc575d729bee1d14a19d0a9b88651
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit a55cb9121a16e1f6d5c2fbb35fcbd5a676fae130
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Mon Jan 19 14:36:19 2015 +1000
+
+    Move the property #defines up
+    
+    Since they serve as documentation, make them easier to find.
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit efb5cacb25be0197479ec6178ffe194c93d61b90
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Fri Jan 16 14:39:29 2015 +1000
+
+    xf86-input-libinput 0.5.0
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit 2348a6812a3cc575d729bee1d14a19d0a9b88651
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Tue Jan 13 13:02:38 2015 +1000
+
+    Fix for new libinput APIs
+    
+    Scroll events carry multiple axes.
+    
+    Left-handed config was renamed to drop the "button" bit
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit 0c4eaf5480168b468547cdb3bd8ce5247b5a5378
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Tue Dec 2 12:29:07 2014 +1000
+
+    Support server-side fds
+    
+    libinput's device handling and server-side fd handling are a bit of a
+    mismatch, so this is hackier than one would hope for.
+    
+    The server sets pInfo->fd and the options "fd" and "device".
+    The server requires pInfo->fd to be the one triggering select(2) to call the
+    correct pInfo->read_input. We can't pass an fd to use into libinput, all we
+    have is the open_restricted callback. That callback gives us the context, but
+    not the pInfo with the fd we want.
+    
+    The solution:
+    1) In PreInit, store the patch + fd combination in a driver-wide list. Search
+    that list for an fd in open_restricted, return the pre-openend fd.
+    
+    2) Overwrite all devices' pInfo->fd with the libinput epollfd. In this driver
+    we don't care about which device read_input is called on, we get the correct
+    pInfo to post events from through the struct libinput_device of the libinput
+    events.
+    
+    3) When a device is closed, swap the real fd back in so systemd-logind closes the
+    right fd.
+    
+    This saves us worrying about keeping the right refcount on who currently has
+    the fd set to the libinput fd. We just set it for all devices, let the server
+    figure out which device to call (the first in inputInfo.devices) and we only
+    need to remember to swap it back during DEVICE_OFF.
+    
+    If the server calls close on a pInfo->fd without telling the driver, that's a
+    bug anyway.
+    
+    This patch also drops the pInfo->fd = -1 calls, they've been unnecessary since
+    at least 1.11, possibly earlier.
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+    Reviewed-by: Hans de Goede <hdegoede@redhat.com>
+
+commit bc7bcca342ad1abcfbbf0df58052ff1b6c2e38bd
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Fri Dec 5 15:18:40 2014 +1000
+
+    xf86-input-libinput 0.4.0
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit e5079cd98e453ed8d6bd5a9f731adb33c464b96d
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Fri Dec 5 15:11:43 2014 +1000
+
+    Require libinput 0.7.0
+    
+    We've required this already anyway, now we have the libinput version to match
+    though
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit 200be95ac9d4284dcd6875903ae5ef3f51c65440
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Thu Dec 4 17:31:08 2014 +1000
+
+    Support absolute pointer devices
+    
+    Detecting them is a bit of guesswork: if a device is a pointer device and has
+    a calibration matrix option, then the device must be an abs device.
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit 8b5dbd4c018fbb8ac15fa19d8fe1365ad119529d
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Mon Dec 1 11:55:33 2014 +1000
+
+    Split up a really long line
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit fb5c5b6f8547bee22a13e9e461da13103654b510
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Mon Dec 1 11:52:28 2014 +1000
+
+    Move the option parsing into a separate function
+    
+    No functional changes, makes preinit a bit more digestible.
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit 182363d674427478a3a86c0d81a038a663b9b66a
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Mon Dec 1 11:48:56 2014 +1000
+
+    Change a sigsafe error to xf86IDrvMsg
+    
+    We don't use the signal handler in this driver, so no need for sigsafe
+    logging.
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit f0b14c6ccce202d9dba03170a9aa73ba0df7c082
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Mon Dec 1 11:47:15 2014 +1000
+
+    Change the touch IDs to uints
+    
+    Better overflow behavior, not that we're likely to trigger it.
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit e92c9f0bad257343224835dfe5e26dbf826c5ece
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Mon Dec 1 11:45:40 2014 +1000
+
+    man: fix wrong option name
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit dda952fafed05ce15c79e0f5a5928cc012a60ec6
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Mon Dec 1 11:44:11 2014 +1000
+
+    Leave the XKB defaults up to the server
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit 17302c335277b3dd760e52fd04f5ce1839df17bf
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Fri Nov 28 09:18:14 2014 +1000
+
+    Allow disabling scroll methods
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit 7e3926f2b7b2a9f2a3b08e7e9d7578c93da33025
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Fri Nov 28 08:52:34 2014 +1000
+
+    Split sendevent modes property into "available" and "current"
+    
+    Clients need to know which methods are available, not just which one
+    is currently set. Export bitmask config options as two properties,
+    one read-only named "... Available" and one set-able one named "... Enabled"
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit 9ad23dd1cb44ad21207dd0110a7253506066a944
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Fri Nov 28 08:29:16 2014 +1000
+
+    Split scroll methods property into "available" and "current"
+    
+    Clients need to know which methods are available, not just which one is
+    currently set. Export bitmask config options as two properties, one read-only
+    named "... Available" and one set-able one named "... Enabled"
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit 7b2dbdc224e3e81cc322d3590e1c0079d4a5cb56
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Mon Nov 24 17:43:23 2014 +1000
+
+    xf86-input-libinput 0.3.0
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit eddc8cb1b2b66f575348c6ff7cb189ce0052ef88
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Mon Nov 24 11:44:43 2014 +1000
+
+    Don't process events from devices that got removed already
+    
+    If the driver doesn't have a pInfo reference anymore for a libinput device,
+    don't bother processing events, the device was already removed. This was
+    triggered by the libevdev test suite which adds/removes devices very quickly.
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit 95597d80705dbd687cc86ce2eef02f35f7946ed6
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Mon Nov 24 11:35:01 2014 +1000
+
+    Drop double empty lines
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit a323e221a715997aae6738acb106b86aed344355
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Tue Nov 18 15:31:23 2014 +1000
+
+    Use the button conversion helper for normal button events too
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit 6385974e4dc74e1e742e485b68aa037c68c55fa9
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Tue Nov 18 13:58:10 2014 +1000
+
+    Add support for changing the button-scrolling button
+    
+    This currently exposes the libinput button name, which isn't ideal. Needs to
+    be switched to X button numbers.
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit 439a244ae7e6ea21b4e15c08fcaef8cab00920ad
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Tue Nov 18 14:26:15 2014 +1000
+
+    Add support for switching scroll methods
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit 4a049ad6f82c1c8cb5148579b2976d5caf639a14
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Tue Nov 18 13:44:32 2014 +1000
+
+    Add support for left-handed button orientation
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit ef948537e1f2e7007f686f6b1aef0c98b68bb965
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Wed Nov 19 14:54:02 2014 +1000
+
+    xf86-input-libinput 0.2.0
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit 576da9db26d4241dfede0310eef665d5a63ddb94
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Wed Nov 19 11:42:04 2014 +1000
+
+    Hook up the libinput log handler
+    
+    Let the server filter based on the verbosity levels in the server, so map
+    ERROR to -1 (always), INFO to 3 (default verbosity) and DEBUG to 10.
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit 2eb01498bda0855edbfdfdb3bf9cb7b4312a785f
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Wed Nov 19 11:30:12 2014 +1000
+
+    Add an explanatory comment for the disabled ptraccel
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit a4fb161c3e46919d69360794ccb27bc5df8d3340
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Tue Nov 18 16:36:44 2014 +1000
+
+    Allow re-enabling of the sendevents configuration
+    
+    When re-enabling the device, the mode is 0.
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit 15291e53b77a3ab89c7d285acd5ebae54539da5f
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Tue Nov 18 15:50:17 2014 +1000
+
+    Update the README
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit d9c212d2665f2b8c25e5a4cdba29a047bd87d7cd
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Tue Nov 18 15:41:17 2014 +1000
+
+    Init the right number of buttons for pointer devices
+    
+    This only makes room for the highest button number present on the device, it
+    doesn't cater for devices with 'holes'. i.e. if a device has only BTN_BACK, it
+    will initialize buttons for all below too.
+    
+    Which is also evdev's current behavior.
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit d48f437aa9d3f3afaa19bd51d15c3f915e1a1fa0
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Tue Nov 18 15:37:04 2014 +1000
+
+    Replace hardcoded button number with one we can calculate
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit 84f301f7e34c503715f5c9851dc8ac14f0b76d3f
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Tue Nov 18 15:33:05 2014 +1000
+
+    Fix loop condition
+    
+    Use the passed-in value, not the global constant.
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit 6f06b1dd1d9b5b418ca7f3ad000598315c4c04b3
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Tue Nov 18 13:37:31 2014 +1000
+
+    Set the XI type for the device
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit fdbf7eaf4be60c57fcd44aa79b20401184c75d90
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Sun Oct 5 22:48:30 2014 +1000
+
+    man: add missing Makefile.am
+
+commit 2b6c485117b51547e68d5e09128e9ebf1b126984
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Thu Sep 25 16:27:49 2014 +1000
+
+    Store the data in the local options, then apply all at once
+    
+    Less code this way, though if we somehow sneak in a bad option we get the
+    error for it every time we update any property.
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit 246200cbdcdb745f238dab37d3d712b76c91fac5
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Thu Sep 25 16:17:10 2014 +1000
+
+    Apply all config options on DEVICE_ON
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit fb41458a93b2e2492a440f0865291093e3301238
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Thu Sep 25 16:03:59 2014 +1000
+
+    Expose all config options as xorg.conf options
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit d9d2e9a50138af479eabd81ade2159449c06fd1a
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Thu Sep 25 13:42:09 2014 +1000
+
+    Add a man page
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit 0a58edd3f6db91375c007a8a0fa417518d4c0f52
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Thu Sep 25 13:33:21 2014 +1000
+
+    Add a couple of general properties that all drivers should support
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit 8d6019c786febc55cf6c214fbecc44d70eba29be
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Tue Sep 23 07:50:14 2014 +1000
+
+    Expose properties for the various configuration settings.
+    
+    The property support isn't ideal, the server relies on the driver to check
+    first if a setting is possible, applying the setting itself cannot fail.
+    Thus we can't just check the libinput config status code, which matters mostly
+    in the sendevents property where we simply check that only a single bit is set
+    and that the supported modes are equal or more to the requested mode.
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit 532fe35522dc27c7589b37975e88b185f5b6b191
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Wed Sep 24 15:58:33 2014 +1000
+
+    Require libinput 0.6
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit 65a40e2cfc6319b09e711d5d821e12e90b0294b5
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Thu Aug 7 09:56:21 2014 +1000
+
+    Add a rudimentary README
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit 7522884a9e067a903c34e98b416755d146429732
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Thu Aug 7 09:48:46 2014 +1000
+
+    Drop some mention of evdev
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit ef5f0295e77805af2780f4b63a6fc9d2675cc7ce
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Thu Aug 7 09:48:32 2014 +1000
+
+    Ship an example config snippet
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit adb4963109fc68ca618e39e51fa86e531a492bef
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Thu Jul 24 16:55:44 2014 +1000
+
+    Replace AC_PROG_LIBTOOL with LT_INIT
+    
+    Former is deprecated in favor of the latter.
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit e8c4bbceee203665a5192e1ab6df711893f61834
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Thu Jul 24 10:16:29 2014 +1000
+
+    xf86-input-libinput 0.1.2
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit e1a9c82dbcbec59f174cb4906eaf1ef77d5f9286
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Thu Jul 24 10:17:51 2014 +1000
+
+    Drop two comments mentioning evdev
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit fe81ad3ae257f8063f63f8aa5320827a095a2192
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Thu Jul 24 10:14:15 2014 +1000
+
+    Drop the pkgconfig file
+    
+    We don't export anything, so need to ship it
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit 6a6946235979f51169f9256414eb24226cf6f1bc
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Tue Jul 1 11:19:06 2014 +1000
+
+    Let libinput take care of pointer acceleration
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit 2f03f674260873c4fa14cd9d2896287885469bca
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Thu Jun 26 15:36:49 2014 +1000
+
+    xf86-input-libinput 0.1.1
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit 6d634262fd0f42b9bf4237e6adef88201d7c9515
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Thu Jun 26 15:36:25 2014 +1000
+
+    Fix distcheck
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit 6f91b84fd3bbad62c5364cfd4b6b8743cc08b941
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Thu Jun 26 15:35:44 2014 +1000
+
+    Add COPYING file
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit 29fa1a6637fe52a67558b3b0793dd56340a37e62
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Thu Jun 26 15:03:10 2014 +1000
+
+    xf86-input-libinput 0.1.0
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit 9e664af686ed780271ce26c02582fa1185d38ecd
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Thu Jun 26 15:09:09 2014 +1000
+
+    Use the new libinput_ref/unref instead of manual counting.
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit c28d90ba698c3cf411b73a0a4f1314ccb7bb9b9f
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Thu Jun 19 14:50:48 2014 +1000
+
+    Fix for libinput 0.4.0 API changes
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit 3b2e3e6f9e6cbbc2c40bb1bc18603eb241c17338
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Tue Jun 10 09:05:40 2014 +1000
+
+    Require libinput 0.3.0
+    
+    And add fix for the renamed button state enum
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit e7f7ed9303c6a9f9fa7462beb60afc2b2a094fa6
+Author: Jonas Ådahl <jadahl@gmail.com>
+Date:   Mon Jun 2 23:45:23 2014 +0200
+
+    Use floating point instead of fixed point numbers
+    
+    Signed-off-by: Jonas Ådahl <jadahl@gmail.com>
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit 163b244ec5a9d5f73e0aa9732be9f4142bac4f06
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Tue Jun 10 09:03:28 2014 +1000
+
+    Fix scrolling axis number
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit 102c126c02c46f1633e7550fd2bdec658debe053
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Fri Apr 4 15:19:54 2014 +1000
+
+    Delete the input device reference on uninit
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit e114d517b500c5e0d30e352dc3a6d11aa41784f1
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Fri Apr 4 15:18:43 2014 +1000
+
+    Unset the device user data on device off
+    
+    Once we turn the device off, we may still get events from it but the pInfo
+    struct may not be valid anymore to process those events.
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit 1ab6637b56272bb5cef0568a785e2e5948e6b022
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Fri Mar 28 09:09:02 2014 +1000
+
+    zero out the valuator mask before sending touch events
+    
+    otherwise we might re-submit values from other events
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit 16796d08d87a16dfa1ae0eb0f323b2c021cbd4d6
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Tue Mar 25 14:11:36 2014 +1000
+
+    Switch to ValuatorMasks for motion and axis events
+    
+    Allows us to use subpixel data, not that the server does a good job with it.
+    But at least for scrolling we should now be able to scroll by  small amounts
+    too.
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit 116a484498d3be1fe89f32bcc1607040101bd0ff
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Tue Mar 25 13:37:19 2014 +1000
+
+    Only post rel motion events if we have a non-zero delta
+    
+    We trunc the li_fixed_t to int, so we don't always have a delta to post
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit b8611394cda21bf002c38379e01d62d61d9be04a
+Author: Benjamin Tissoires <benjamin.tissoires@redhat.com>
+Date:   Fri Mar 7 10:34:46 2014 +1000
+
+    Do not set valuators for touch up events
+    
+    the kernel does not send any ABS_MT_POSITION_X|Y data while releasing
+    the touch, so use the previous values to set the position of the release.
+    
+    If it's not done, the touch up occurs at (0,0) and moves dragged elements
+    to the upper right corner.
+    
+    Signed-off-by: Benjamin Tissoires <benjamin.tissoires@redhat.com>
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit 74cd082e15e939648f552d24bec3fdd586d8e1c5
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Fri Mar 7 10:33:31 2014 +1000
+
+    Fix up for new libinput API - without touch subtypes
+    
+    Touch types are now top-level event types.
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit ac6e2171d7661336292b2dce64267caf9ea0ddaa
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Fri Mar 7 10:32:44 2014 +1000
+
+    Whitespace fix
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit ec5e60c41edb9f5fc736af4785ed210d71c24a8b
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Fri Feb 21 15:58:20 2014 +1000
+
+    Reset the fd to -1 after PreInit
+    
+    We open and remove the device immediately, but the fd was left on the old
+    value. This makes debugging harder, since the fd looks correct when it isn't.
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit c0046e2b418b8e88bd8d50eb2d23bfb5f5aae88b
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Fri Feb 21 13:50:25 2014 +1000
+
+    Fix bitmask handling when changing LEDs
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit bee8989c741d693cd7adb20235cd05beb3cd90e0
+Author: Benjamin Tissoires <benjamin.tissoires@redhat.com>
+Date:   Mon Feb 17 18:22:17 2014 -0500
+
+    Fix scrolling jumps
+    
+    libinput currently scales wheel events by DEFAULT_AXIS_STEP_DISTANCE,
+    which is currently 10.
+    We may be able to find the value automatically, but it would require
+    some dark codings that may not be robust.
+    For the time being, just duplicate the define in libinput.c and remember
+    to update it if it is changed in the future.
+    
+    Signed-off-by: Benjamin Tissoires <benjamin.tissoires@redhat.com>
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit 761603d9e7207f7ebe0a0824c0e0383e383727ac
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Thu Feb 6 11:28:30 2014 +1000
+
+    Adjust for new API - current-screen-dimensions callback was removed
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit 17826b06dc72cbc897e0f4bbd8d3ef02e23f8a24
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Tue Feb 4 08:45:18 2014 +1000
+
+    Keep track of the enabled devices
+    
+    All libinput devices share the same file descriptor so make sure we don't
+    remove from the server's select loop until the last device is disabled.
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit 54da516906904f186f26f4f5413e529dfae291a9
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Tue Feb 4 08:19:29 2014 +1000
+
+    Clarify a comment
+    
+    Whatever xf86AddEnabledDevice does to the fd, it doesn't work with an
+    epollfd. Should probably investigate that further.
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit 5f502337d55d075b62b90a068b6a5641fb3711ae
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Tue Feb 4 08:07:22 2014 +1000
+
+    Init with default XKB options
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit 6a8db18681a49a3b59bda8e62c84269bb03f5e34
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Tue Feb 4 08:01:45 2014 +1000
+
+    Add the xorg keycode offset to the key events
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit 2b5723909a11f0063a185ec576a6da2b7f37daef
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Fri Jan 31 13:46:19 2014 +1000
+
+    Update to latest API
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit f9154fe303fa4a173caec9250c35fef3f08dc14f
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Fri Dec 20 12:55:23 2013 +1000
+
+    Silence some compiler warnings
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit 0478398202d2694aed2c070fcc8427a6dbb723e0
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Fri Dec 20 11:45:06 2013 +1000
+
+    Hook up touch events
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit 8a50a17d02671049dcf23e4bca414328af034691
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Fri Dec 20 10:53:51 2013 +1000
+
+    Hook up scroll events
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit ec5614d84abe37fff718aa51bba7cc5a6f3a5e7b
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Thu Dec 12 15:24:08 2013 +1000
+
+    Baseline for a libinput-based driver
+    
+    Doesn't do much yet, just the very basic hooks.
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
