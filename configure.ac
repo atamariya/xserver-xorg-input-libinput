@@ -23,7 +23,7 @@
 # Initialize Autoconf
 AC_PREREQ([2.60])
 AC_INIT([xf86-input-libinput],
-        [0.19.0],
+        [0.20.0],
         [https://bugs.freedesktop.org/enter_bug.cgi?product=xorg],
         [xf86-input-libinput])
 AC_CONFIG_SRCDIR([Makefile.am])
@@ -45,7 +45,7 @@ XORG_DEFAULT_OPTIONS
 
 # Obtain compiler/linker options from server and required extensions
 PKG_CHECK_MODULES(XORG, [xorg-server >= 1.10] xproto [inputproto >= 2.2])
-PKG_CHECK_MODULES(LIBINPUT, [libinput >= 1.1.901])
+PKG_CHECK_MODULES(LIBINPUT, [libinput >= 1.4.901])
 
 # Define a configure option for an alternate input module directory
 AC_ARG_WITH(xorg-module-dir,
@@ -58,9 +58,9 @@ AC_SUBST(inputdir)
 
 AC_ARG_WITH(xorg-conf-dir,
             AC_HELP_STRING([--with-xorg-conf-dir=DIR],
-                           [Default xorg.conf.d directory [[default=$prefix/share/X11/xorg.conf.d/]]]),
+                           [Default xorg.conf.d directory [[default=${prefix}/share/X11/xorg.conf.d]]]),
             [xorgconfdir="$withval"],
-            [xorgconfdir="$prefix/share/X11/xorg.conf.d"])
+            [xorgconfdir='${prefix}/share/X11/xorg.conf.d'])
 AC_SUBST(xorgconfdir)
 
 # X Server SDK location is required to install header files
