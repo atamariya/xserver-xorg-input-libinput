@@ -66,22 +66,3 @@ Provides:
  ${xinpdriver:Provides}
 Description: X.Org X server -- libinput input driver
  This is a udeb, or a microdeb, for the debian-installer.
-
-Package: xserver-xorg-input-libinput-dbg
-Architecture: linux-any
-Depends:
- ${misc:Depends},
- xserver-xorg-input-libinput (= ${binary:Version}),
-Section: debug
-Priority: extra
-Description: X.Org X server -- libinput input driver (debug symbols)
- This package provides the development headers for the libinput input driver
- found in xserver-xorg-input-libinput. Non-developers likely have little use
- for this package.
- .
- More information about X.Org can be found at:
- <URL:http://www.X.org>
- .
- This package is built from the X.org xf86-input-libinput driver module.
- .
- This package provides debugging symbols for this Xorg X driver.
