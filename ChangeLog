@@ -1,12 +1,95 @@
-commit 9b9fa156020c7859bea3b6196769f390bdabf1ee
+commit 728217775626e2086d7c3acd0d242562390f145b
 Author: Peter Hutterer <peter.hutterer@who-t.net>
-Date:   Wed Sep 14 07:17:51 2016 +1000
+Date:   Wed Oct 19 10:55:12 2016 +1000
 
-    xf86-input-libinput 0.19.1
+    xf86-input-libinput 0.22.0
     
     Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
 
-commit 0d8d6f15e2961291c2bbf977913ba18ff20bad63
+commit 1dd61abf7e6af9cdd12d8f5a35fe90954aa03e64
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Wed Oct 19 10:37:32 2016 +1000
+
+    Wrap the input_lock calls into ifdefs
+    
+    Missing from a790ff35f9
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit c80954386d536b83f2c9290e1a88515c04505818
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Wed Oct 19 09:24:37 2016 +1000
+
+    xf86-input-libinput 0.21.0
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit a790ff35f90e459fe03e0c78ab6f4e9dd5045dd0
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Fri Oct 14 17:00:41 2016 +1000
+
+    Swap the registered input device on DEVICE_OFF when needed
+    
+    If we don't swap out the pInfo previously passed to xf86AddEnabledDevice(),
+    the thread eventually calls read_input on a struct that has been deleted.
+    Avoid this by swapping out the to-be-destroyed pInfo with the first one we
+    find.
+    
+    Reproducer: sudo udevadm trigger --type=devices --action=add
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+    Reviewed-by: Hans de Goede <hdegoede@redhat.com>
+
+commit 6318ac420b644c7f7a6f2c8e47a64238a4afebeb
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Fri Oct 14 13:34:56 2016 +1000
+
+    Fix tap button map option handling
+    
+    Copy/paste error
+    
+    https://bugs.freedesktop.org/show_bug.cgi?id=97989
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit cd02040a5d4a8f120d225a4c09f5d1dfc751c0a8
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Fri Sep 30 17:01:21 2016 +1000
+
+    xf86-input-libinput 0.20.0
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit 0cfe9ec6c23e73507fd0797bae24c5ed6fcce033
+Author: Michel Dänzer <michel.daenzer@amd.com>
+Date:   Fri Sep 16 17:26:06 2016 +0900
+
+    Fix --with-xorg-conf-dir default value
+    
+    If --prefix isn't specified on the command line, $prefix contains "NONE"
+    at this point, not the default prefix value. So make install would
+    attempt to install the xorg.conf.d snippet to
+    ${DESTDIR}NONE/share/X11/xorg.conf.d/.
+    
+    Avoid this by leaving ${prefix} verbatim in the default value, to be
+    resolved by make.
+    
+    Signed-off-by: Michel Dänzer <michel.daenzer@amd.com>
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit b87d2530db46a08de15376722873295e01bef16f
+Author: Keith Packard <keithp@keithp.com>
+Date:   Fri Sep 16 10:18:31 2016 -0700
+
+    Initializing strip association with wrong index
+    
+    This looks like a cut&paste coding error to me, and it generated a
+    compiler warning about possibly uninitialized value.
+    
+    Signed-off-by: Keith Packard <keithp@keithp.com>
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit 2f1df46ba9ef91c079f6485c04ac7c5515d6057a
 Author: Peter Hutterer <peter.hutterer@who-t.net>
 Date:   Tue Sep 13 14:37:07 2016 +1000
 
@@ -18,18 +101,240 @@ Date:   Tue Sep 13 14:37:07 2016 +1000
     
     Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
     Reviewed-by: Hans de Goede <hdegoede@redhat.com>
-    (cherry picked from commit 2f1df46ba9ef91c079f6485c04ac7c5515d6057a)
 
-commit e85ec72025bf003cf73948d02297bf46159f1eac
+commit fa69bb1bc244f378507e1ef2fbcb3ea343a59a32
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Thu Aug 18 15:13:09 2016 +1000
+
+    Always delay hotplugging subdevices
+    
+    Avoid creating new devices from within the input thread which was the case for
+    tablet tools. It requires a lot more care about locking and has a potential to
+    mess up things.
+    
+    Instead, schedule a WorkProc and buffer all events until we have the device
+    created. Once that's done, replay the event sequence so far. If the device
+    comes into proximity and out again before we manage to create the new device
+    we just ditch the whole sequence and wait for the next proximity in.
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit af4fa36884b1945a231b2f7ebe011726b5a604c1
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Tue Aug 16 09:06:27 2016 +1000
+
+    Add support for configurable tap button mapping
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+    Reviewed-by: Hans de Goede <hdegoede@redhat.com>
+
+commit a5b3c209fc8619dea6ac57420fb7837cf6e0e8bf
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Mon May 30 15:27:52 2016 +1000
+
+    Add support for the rotation configuration
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit 0f7c5ed02d4f2de34c6fb1fc3f4debceef08d0d7
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Tue Aug 30 12:42:58 2016 +1000
+
+    conf: drop libinput to below the other drivers
+    
+    This is the continuation of 3f569ec493e, dropping libinput below the remaining
+    drivers. Wacom and synaptics already sort higher anyway (see wacom commit
+    0da5cd54 and synaptics commit 59e5db025). evdev remains the catchall
+    basic fallback driver and is overwritten by libinput. The two drivers affected
+    by this patch are joystick and vmmouse.
+    
+    joystick is a niche driver and drives devices libinput doesn't handle anyway
+    so there is no need to override. If a user installs it, presumably it is to
+    use it.
+    
+    vmmouse is a niche driver and does not assign itself anymore for newer kernel
+    drivers (see vmmouse commit 576e8123 from Oct 2014). So if vmmouse is
+    installed it can safely sort higher than libinput.
+    
+    Note: this is upstream behavior, distributions have to work out the wanted
+    behavior themselves by renaming the config snippets accordingly.
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+    Reviewed-by: Hans de Goede <hdegoede@redhat.com>
+
+commit 0168716fa18cc72a8e6198b0d87b1798429d7096
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Fri Aug 19 11:35:02 2016 +1000
+
+    Whitespace fix
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit b508c54fa0d569beb00ccba3d5b27ca993aae94d
 Author: Peter Hutterer <peter.hutterer@who-t.net>
 Date:   Tue Aug 16 09:34:36 2016 +1000
 
     Comment two read-only properties as such
     
     Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
-    (cherry picked from commit b508c54fa0d569beb00ccba3d5b27ca993aae94d)
 
-commit 758e9037b56a502f90a032b2438dc307334ca190
+commit d43e514430ef5878cd64387169952435d2f83007
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Fri Jul 8 12:03:19 2016 +1000
+
+    Expose tablet pad modes as properties
+    
+    There is not good wire protocol for pad modes so instead we just export the
+    information via properties. One property to tell us how many groups and how
+    many modes each group has. One property for the current mode of each group.
+    And three properties to tell us which group each button, ring and strip is in.
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit 5f2fff3c2455ad3580c4c130cf85cb5076838c18
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Mon Aug 15 10:40:20 2016 +1000
+
+    Ensure parent devices are actual parent devices
+    
+    The list returned by xf86FirstLocalDevice() includes our own device. If the
+    parent device is removed before the hotplug callback is invoked, the first
+    match with the same shared-device ID is our own device (or potentially another
+    subdevice on the same already-removed parent). Avoid this by making sure the
+    matched device is actually a parent device.
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+    Reviewed-by: Hans de Goede <hdegoede@redhat.com>
+    Tested-by: Keith Packard <keithp@keithp.com>
+
+commit 116cddba69b37246db564c1ddf772c0144c589f0
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Wed Aug 3 16:17:03 2016 +1000
+
+    Bail out of PreInit if the parent driver data is NULL
+    
+    If the parent device is removed before the WorkProc is called, the private
+    data is NULL.
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+    Reviewed-by: Hans de Goede <hdegoede@redhat.com>
+
+commit fb4847d243321cb400b9abbb1f04eb8566c8cf8e
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Wed Aug 3 15:48:58 2016 +1000
+
+    Block input events while creating the virtual subdevices
+    
+    If an event comes in halfway through the new device creation we read it from
+    libinput's epollfd but depending on the setup stage the new device may not be
+    ready yet.
+    
+    https://bugs.freedesktop.org/show_bug.cgi?id=97117
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+    Reviewed-by: Hans de Goede <hdegoede@redhat.com>
+
+commit ce85b11e4c211da3b3fe1b6803498c96065c2598
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Fri Jul 8 13:01:54 2016 +1000
+
+    Fix button offset for tablet pad buttons
+    
+    4-7 is reserved for scroll buttons, as usual
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit 77a47a795c04f86260ecfa7a96281f8b5a3f4e0f
+Author: Eric Engestrom <eric@engestrom.ch>
+Date:   Sat Jul 2 12:39:12 2016 +0100
+
+    man: fix a couple typos
+    
+    Signed-off-by: Eric Engestrom <eric@engestrom.ch>
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit ae4f0a8d72e396528e1108161a3bcc0132df43a2
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Fri Jun 10 08:27:30 2016 +1000
+
+    Init touch x/y axis labels as MT axis labels
+    
+    https://bugs.freedesktop.org/show_bug.cgi?id=96481
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+    Reviewed-by: Hans de Goede <hdegoede@redhat.com>
+
+commit 289de5be15967983154c7cd9fbb344aab80b6679
+Author: Keith Packard <keithp@keithp.com>
+Date:   Mon May 30 01:13:41 2016 -0700
+
+    Use xf86AddEnabledDevice instead of AddEnabledDevice when threaded [v3]
+    
+    libinput can't run at SIGIO time, so it has been using
+    AddEnabledDevice to run in non-signal context.
+    
+    Threaded input runs all input in non-signal context, so we want to use
+    xf86AddEnabledDevice at last.
+    
+    v2: use XINPUT ABI version check instead of testing for presence of
+        AddEnabledDevice, which can't get removed from the server until
+        a few more patches past the threaded input change are merged.
+    
+    v3: remove reference to XI86_SIGNAL_IO, which was presumably
+        a planned change to the xf86AddEnabledDevice path to make that
+        not use SIGIO.
+    
+    Signed-off-by: Keith Packard <keithp@keithp.com>
+    Tested-by: Michel Dänzer <michel.daenzer@amd.com>
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit ceea2bb8ba5d5be8601c7e79b68d7805af4ce5e4
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Mon May 30 14:31:15 2016 +1000
+
+    Change some fixed floats to decimal notation
+    
+    Just to make it more obvious we're using floats/doubles here.
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit d8aef838347bc64fa635eeac436c2d1154d846ce
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Mon May 23 14:12:14 2016 +1000
+
+    Fix proximity events
+    
+    Two bugs caused proximity events to be discarded. First, on proximity out
+    posting through pDev would be discarded because pDev is the parent device that
+    we use as a base for hotplugging the real devices for each tool from. That
+    device never sends events though, doing so will see the event discarded in the
+    server.
+    
+    Second, if the tool already exists don't just exit, send the proximity event
+    first. To unify the three paths where we do send the events simply move them
+    down to the exit phase of the function.
+    
+    https://bugs.freedesktop.org/show_bug.cgi?id=95484
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit 34b6ed980f8fd01e2246a94b87d32458a131974b
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Mon Apr 18 11:54:04 2016 +1000
+
+    Add tablet pad support
+    
+    Modelled to be mostly compatible to the xf86-input-wacom driver behavior. The
+    pad gets 7 axes, the first three of which are mute and the others are always
+    available but obviously only send events when the axis is there.
+    
+    The strip axes are incompatible, the wacom driver merely forwards the device
+    events (which are a bitshifted value), libinput normalizes it and we just
+    expand this back into an integer range. Let's see how we go with this.
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit ce85432f41549cd6f3c6e0c5e2e39d0c1aee8dfd
 Author: Peter Hutterer <peter.hutterer@who-t.net>
 Date:   Mon May 9 07:58:51 2016 +1000
 
@@ -38,7 +343,14 @@ Date:   Mon May 9 07:58:51 2016 +1000
     https://bugs.freedesktop.org/show_bug.cgi?id=95295
     
     Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
-    (cherry picked from commit ce85432f41549cd6f3c6e0c5e2e39d0c1aee8dfd)
+
+commit 181ea654dd737783553289a77b72706783b40c17
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Thu Apr 28 14:10:50 2016 +1000
+
+    Fix potential use of uninitialized values
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
 
 commit f9b6fa21df735e9a68c5f527afc422f519d6002c
 Author: Peter Hutterer <peter.hutterer@who-t.net>
