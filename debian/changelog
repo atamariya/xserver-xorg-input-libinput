@@ -1,9 +1,9 @@
-xserver-xorg-input-libinput (0.22.0-1) UNRELEASED; urgency=medium
+xserver-xorg-input-libinput (0.22.0-1) unstable; urgency=medium
 
   * New upstream release.
   * control: Bump build-dep on libinput-dev.
 
- -- Timo Aaltonen <tjaalton@debian.org>  Mon, 07 Nov 2016 14:00:52 +0200
+ -- Timo Aaltonen <tjaalton@debian.org>  Fri, 18 Nov 2016 16:03:02 +0200
 
 xserver-xorg-input-libinput (0.20.0-1) unstable; urgency=medium
 
