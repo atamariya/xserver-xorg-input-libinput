@@ -5,6 +5,7 @@ xserver-xorg-input-libinput (0.23.0-1) UNRELEASED; urgency=medium
     + Let debhelper run autoreconf for us.
   * No need to pass --disable-silent-rules to configure, debhelper does
     that these days.
+  * No need for --destdir=debian/tmp as we have multiple binary packages.
 
  -- Emilio Pozuelo Monfort <pochu@debian.org>  Mon, 12 Dec 2016 19:09:05 +0100
 
