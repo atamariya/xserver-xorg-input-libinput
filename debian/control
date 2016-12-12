@@ -5,7 +5,6 @@ Maintainer: Debian X Strike Force <debian-x@lists.debian.org>
 Uploaders: Timo Aaltonen <tjaalton@debian.org>,
 Build-Depends:
  debhelper (>= 10),
- dh-autoreconf,
  libinput-dev (>= 1.4.901),
  libudev-dev,
  pkg-config,

@@ -2,6 +2,7 @@ xserver-xorg-input-libinput (0.23.0-1) UNRELEASED; urgency=medium
 
   * New upstream release.
   * Bump debhelper compat to 10.
+    + Let debhelper run autoreconf for us.
   * No need to pass --disable-silent-rules to configure, debhelper does
     that these days.
 
