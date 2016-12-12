@@ -126,8 +126,6 @@ struct xf86libinput {
 	struct {
 		int vdist;
 		int hdist;
-		int vdist_remainder;
-		int hdist_remainder;
 	} scroll;
 
 	struct {
@@ -1164,8 +1162,7 @@ swap_registered_device(InputInfoPtr pInfo)
 	int sigstate = xf86BlockSIGIO();
 #endif
 	xf86RemoveEnabledDevice(pInfo);
-	if (next) /* shouldn't ever be NULL anyway */
-		xf86AddEnabledDevice(next);
+	xf86AddEnabledDevice(next);
 	driver_context.registered_InputInfoPtr = next;
 #if HAVE_THREADED_INPUT
 	input_unlock();
@@ -2334,6 +2331,7 @@ xf86libinput_parse_calibration_option(InputInfoPtr pInfo,
 {
 	char *str;
 	float matrix[9] = { 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0};
+	int num_calibration;
 
 	memcpy(matrix_out, matrix, sizeof(matrix));
 
@@ -2343,27 +2341,29 @@ xf86libinput_parse_calibration_option(InputInfoPtr pInfo,
 	libinput_device_config_calibration_get_matrix(device, matrix);
 	memcpy(matrix_out, matrix, sizeof(matrix));
 
-	if ((str = xf86CheckStrOption(pInfo->options,
-				      "CalibrationMatrix",
-				      NULL))) {
-		int num_calibration = sscanf(str, "%f %f %f %f %f %f %f %f %f ",
-					     &matrix[0], &matrix[1],
-					     &matrix[2], &matrix[3],
-					     &matrix[4], &matrix[5],
-					     &matrix[6], &matrix[7],
-					     &matrix[8]);
-		if (num_calibration != 9) {
-			xf86IDrvMsg(pInfo, X_ERROR,
-				    "Invalid matrix: %s, using default\n",  str);
-		} else if (libinput_device_config_calibration_set_matrix(device,
-									 matrix) ==
-			   LIBINPUT_CONFIG_STATUS_SUCCESS) {
-			memcpy(matrix_out, matrix, sizeof(matrix));
-		} else
-			xf86IDrvMsg(pInfo, X_ERROR,
-				    "Failed to apply matrix: %s, using default\n",  str);
-		free(str);
-	}
+	str = xf86CheckStrOption(pInfo->options,
+				 "CalibrationMatrix",
+				 NULL);
+	if (!str)
+		return;
+
+	num_calibration = sscanf(str, "%f %f %f %f %f %f %f %f %f ",
+				 &matrix[0], &matrix[1],
+				 &matrix[2], &matrix[3],
+				 &matrix[4], &matrix[5],
+				 &matrix[6], &matrix[7],
+				 &matrix[8]);
+	if (num_calibration != 9) {
+		xf86IDrvMsg(pInfo, X_ERROR,
+			    "Invalid matrix: %s, using default\n",  str);
+	} else if (libinput_device_config_calibration_set_matrix(device,
+								 matrix) ==
+		   LIBINPUT_CONFIG_STATUS_SUCCESS) {
+		memcpy(matrix_out, matrix, sizeof(matrix));
+	} else
+		xf86IDrvMsg(pInfo, X_ERROR,
+			    "Failed to apply matrix: %s, using default\n",  str);
+	free(str);
 }
 
 static inline BOOL
@@ -2850,7 +2850,7 @@ xf86libinput_pre_init(InputDriverPtr drv,
 	struct xf86libinput *driver_data = NULL;
 	struct xf86libinput_device *shared_device = NULL;
 	struct libinput *libinput = NULL;
-	struct libinput_device *device;
+	struct libinput_device *device = NULL;
 	char *path = NULL;
 	bool is_subdevice;
 
@@ -2885,7 +2885,28 @@ xf86libinput_pre_init(InputDriverPtr drv,
 	}
 
 	is_subdevice = xf86libinput_is_subdevice(pInfo);
-	if (!is_subdevice) {
+	if (is_subdevice) {
+		InputInfoPtr parent;
+		struct xf86libinput *parent_driver_data;
+
+		parent = xf86libinput_get_parent(pInfo);
+		if (!parent) {
+			xf86IDrvMsg(pInfo, X_ERROR, "Failed to find parent device\n");
+			goto fail;
+		}
+
+		parent_driver_data = parent->private;
+		if (!parent_driver_data) /* parent already removed again */
+			goto fail;
+
+		xf86IDrvMsg(pInfo, X_INFO, "is a virtual subdevice\n");
+		shared_device = xf86libinput_shared_ref(parent_driver_data->shared_device);
+		device = shared_device->device;
+		if (!device)
+			xf86IDrvMsg(pInfo, X_ERROR, "Parent device not available\n");
+	}
+
+	if (!device) {
 		device = libinput_path_add_device(libinput, path);
 		if (!device) {
 			xf86IDrvMsg(pInfo, X_ERROR, "Failed to create a device for %s\n", path);
@@ -2903,23 +2924,6 @@ xf86libinput_pre_init(InputDriverPtr drv,
 			libinput_device_unref(device);
 			goto fail;
 		}
-	} else {
-		InputInfoPtr parent;
-		struct xf86libinput *parent_driver_data;
-
-		parent = xf86libinput_get_parent(pInfo);
-		if (!parent) {
-			xf86IDrvMsg(pInfo, X_ERROR, "Failed to find parent device\n");
-			goto fail;
-		}
-
-		parent_driver_data = parent->private;
-		if (!parent_driver_data) /* parent already removed again */
-			goto fail;
-
-		xf86IDrvMsg(pInfo, X_INFO, "is a virtual subdevice\n");
-		shared_device = xf86libinput_shared_ref(parent_driver_data->shared_device);
-		device = shared_device->device;
 	}
 
 	pInfo->private = driver_data;
@@ -2971,10 +2975,12 @@ xf86libinput_pre_init(InputDriverPtr drv,
 
 	return Success;
 fail:
-	if (driver_data->valuators)
-		valuator_mask_free(&driver_data->valuators);
-	if (driver_data->valuators_unaccelerated)
-		valuator_mask_free(&driver_data->valuators_unaccelerated);
+	if (driver_data) {
+		if (driver_data->valuators)
+			valuator_mask_free(&driver_data->valuators);
+		if (driver_data->valuators_unaccelerated)
+			valuator_mask_free(&driver_data->valuators_unaccelerated);
+	}
 	free(path);
 	if (shared_device)
 		xf86libinput_shared_unref(shared_device);
@@ -3492,7 +3498,28 @@ LibinputSetPropertyLeftHanded(DeviceIntPtr dev,
 		if (!supported && left_handed)
 			return BadValue;
 	} else {
+		struct xf86libinput *other;
+
 		driver_data->options.left_handed = *data;
+
+		xorg_list_for_each_entry(other,
+					 &driver_data->shared_device->device_list,
+					 shared_device_link) {
+			DeviceIntPtr other_device = other->pInfo->dev;
+
+			if (other->options.left_handed == *data)
+				continue;
+
+			XIChangeDeviceProperty(other_device,
+					       atom,
+					       val->type,
+					       val->format,
+					       PropModeReplace,
+					       val->size,
+					       val->data,
+					       TRUE);
+		}
+
 	}
 
 	return Success;
@@ -4093,7 +4120,8 @@ LibinputInitAccelProperty(DeviceIntPtr dev,
 	enum libinput_config_accel_profile profile;
 	BOOL profiles[2] = {FALSE};
 
-	if (!libinput_device_config_accel_is_available(device))
+	if (!libinput_device_config_accel_is_available(device) ||
+	    driver_data->capabilities & CAP_TABLET)
 		return;
 
 	prop_accel = LibinputMakeProperty(dev,
@@ -4261,7 +4289,8 @@ LibinputInitLeftHandedProperty(DeviceIntPtr dev,
 {
 	BOOL left_handed = driver_data->options.left_handed;
 
-	if (!libinput_device_config_left_handed_is_available(device))
+	if (!libinput_device_config_left_handed_is_available(device) ||
+	    driver_data->capabilities & CAP_TABLET)
 		return;
 
 	prop_left_handed = LibinputMakeProperty(dev,
@@ -4357,6 +4386,7 @@ LibinputInitScrollMethodsProperty(DeviceIntPtr dev,
 			return;
 
 		scroll_button = libinput_device_config_scroll_get_default_button(device);
+		scroll_button = btn_linux2xorg(scroll_button);
 		prop_scroll_button_default = LibinputMakeProperty(dev,
 								  LIBINPUT_PROP_SCROLL_BUTTON_DEFAULT,
 								  XA_CARDINAL, 32,
@@ -4652,6 +4682,9 @@ LibinputInitHorizScrollProperty(DeviceIntPtr dev,
 				struct xf86libinput *driver_data)
 {
 	BOOL enabled = driver_data->options.horiz_scrolling_enabled;
+
+	if ((driver_data->capabilities & CAP_POINTER) == 0)
+		return;
 
 	prop_horiz_scroll = LibinputMakeProperty(dev,
 						 LIBINPUT_PROP_HORIZ_SCROLL_ENABLED,
