@@ -1,6 +1,7 @@
 xserver-xorg-input-libinput (0.23.0-1) UNRELEASED; urgency=medium
 
   * New upstream release.
+  * Bump debhelper compat to 10.
 
  -- Emilio Pozuelo Monfort <pochu@debian.org>  Mon, 12 Dec 2016 19:09:05 +0100
 
