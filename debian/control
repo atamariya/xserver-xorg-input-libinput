@@ -14,6 +14,7 @@ Build-Depends:
  xserver-xorg-dev (>= 2:1.15.99),
  xutils-dev,
 Standards-Version: 3.9.7
+Homepage: https://www.x.org
 Vcs-Git: https://anonscm.debian.org/git/pkg-xorg/driver/xserver-xorg-input-libinput.git
 Vcs-Browser: https://anonscm.debian.org/cgit/pkg-xorg/driver/xserver-xorg-input-libinput.git
 
@@ -30,9 +31,6 @@ Description: X.Org X server -- libinput input driver
  It can handle keyboards, mice and touchpads, and essentially replaces the
  separate -evdev and -synaptics drivers.
  .
- More information about X.Org can be found at:
- <URL:https://www.X.org>
- .
  This package is built from the X.org xf86-input-libinput driver module.
 
 Package: xserver-xorg-input-libinput-dev
@@ -45,9 +43,6 @@ Description: X.Org X server -- libinput input driver (development headers)
  This package provides the development headers for the libinput input driver
  found in xserver-xorg-input-libinput. Non-developers likely have little use
  for this package.
- .
- More information about X.Org can be found at:
- <URL:https://www.X.org>
  .
  This package is built from the X.org xf86-input-libinput driver module.
 
