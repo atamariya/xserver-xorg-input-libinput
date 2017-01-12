@@ -31,7 +31,7 @@ Description: X.Org X server -- libinput input driver
  separate -evdev and -synaptics drivers.
  .
  More information about X.Org can be found at:
- <URL:http://www.X.org>
+ <URL:https://www.X.org>
  .
  This package is built from the X.org xf86-input-libinput driver module.
 
@@ -47,7 +47,7 @@ Description: X.Org X server -- libinput input driver (development headers)
  for this package.
  .
  More information about X.Org can be found at:
- <URL:http://www.X.org>
+ <URL:https://www.X.org>
  .
  This package is built from the X.org xf86-input-libinput driver module.
 

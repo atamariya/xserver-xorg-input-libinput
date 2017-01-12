@@ -1,6 +1,6 @@
-Format: http://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
 Upstream-name: xf86-input-libinput
-Source: http://xorg.freedesktop.org/releases/individual/driver/
+Source: https://xorg.freedesktop.org/releases/individual/driver/
 
 Files: *
 Copyright: 2013-2014 Red Hat, Inc.
