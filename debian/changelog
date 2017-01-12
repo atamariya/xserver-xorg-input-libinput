@@ -4,6 +4,7 @@ xserver-xorg-input-libinput (0.23.0-2) UNRELEASED; urgency=medium
     from upstream master branch (Closes: #829386).
   * Switch URLs to https.
   * Move URL from description to Homepage field.
+  * Bump Standards-Version to 3.9.8.
 
  -- Andreas Boll <andreas.boll.dev@gmail.com>  Thu, 12 Jan 2017 12:12:20 +0100
 

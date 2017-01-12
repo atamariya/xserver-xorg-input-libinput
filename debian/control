@@ -13,7 +13,7 @@ Build-Depends:
  x11proto-input-dev (>= 2.2),
  xserver-xorg-dev (>= 2:1.15.99),
  xutils-dev,
-Standards-Version: 3.9.7
+Standards-Version: 3.9.8
 Homepage: https://www.x.org
 Vcs-Git: https://anonscm.debian.org/git/pkg-xorg/driver/xserver-xorg-input-libinput.git
 Vcs-Browser: https://anonscm.debian.org/cgit/pkg-xorg/driver/xserver-xorg-input-libinput.git
