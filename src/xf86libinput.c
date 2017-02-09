@@ -42,6 +42,7 @@
 
 #include <X11/Xatom.h>
 
+#include "bezier.h"
 #include "draglock.h"
 #include "libinput-properties.h"
 
@@ -126,6 +127,9 @@ struct xf86libinput {
 	struct {
 		int vdist;
 		int hdist;
+
+		double vdist_fraction;
+		double hdist_fraction;
 	} scroll;
 
 	struct {
@@ -162,6 +166,10 @@ struct xf86libinput {
 		BOOL horiz_scrolling_enabled;
 
 		float rotation_angle;
+		struct bezier_control_point pressurecurve[4];
+		struct ratio {
+			int x, y;
+		} area;
 	} options;
 
 	struct draglock draglock;
@@ -172,6 +180,17 @@ struct xf86libinput {
 	struct libinput_tablet_tool *tablet_tool;
 
 	bool allow_mode_group_updates;
+
+	/* Pre-calculated pressure curve.
+	   In the 0...TABLET_AXIS_MAX range */
+	struct {
+		int *values;
+		size_t sz;
+	} pressurecurve;
+
+	struct scale_factor {
+		double x, y;
+	} area_scale_factor;
 };
 
 enum event_handling {
@@ -380,6 +399,59 @@ static inline bool
 xf86libinput_shared_is_enabled(struct xf86libinput_device *shared_device)
 {
 	return shared_device->enabled_count > 0;
+}
+
+static inline bool
+xf86libinput_set_pressurecurve(struct xf86libinput *driver_data,
+			       const struct bezier_control_point controls[4])
+{
+	if (memcmp(controls, bezier_defaults, sizeof(bezier_defaults)) == 0) {
+		free(driver_data->pressurecurve.values);
+		driver_data->pressurecurve.values = NULL;
+		return true;
+	}
+
+	if (!driver_data->pressurecurve.values) {
+		int *vals = calloc(TABLET_PRESSURE_AXIS_MAX + 1, sizeof(int));
+		if (!vals)
+			return false;
+
+		driver_data->pressurecurve.values = vals;
+		driver_data->pressurecurve.sz = TABLET_PRESSURE_AXIS_MAX + 1;
+	}
+
+	return cubic_bezier(controls,
+			    driver_data->pressurecurve.values,
+			    driver_data->pressurecurve.sz);
+}
+
+static inline void
+xf86libinput_set_area_ratio(struct xf86libinput *driver_data,
+			    const struct ratio *ratio)
+{
+	double f;
+	double w, h;
+
+	if (libinput_device_get_size(driver_data->shared_device->device, &w, &h) != 0)
+		return;
+
+	driver_data->options.area = *ratio;
+
+	if (ratio->y == 0) {
+		driver_data->area_scale_factor.x = 1.0;
+		driver_data->area_scale_factor.y = 1.0;
+		return;
+	}
+
+	f = 1.0 * (ratio->x * h)/(ratio->y * w);
+
+	if (f <= 1.0) {
+		driver_data->area_scale_factor.x = 1.0/f;
+		driver_data->area_scale_factor.y = 1.0;
+	} else {
+		driver_data->area_scale_factor.x = 1.0;
+		driver_data->area_scale_factor.y = f;
+	}
 }
 
 static int
@@ -1323,6 +1395,92 @@ xf86libinput_handle_key(InputInfoPtr pInfo, struct libinput_event_keyboard *even
 	xf86PostKeyboardEvent(dev, key, is_press);
 }
 
+/*
+ * The scroll fraction is the value we divide the scroll dist with to
+ * accommodate for wheels with a small click angle. On these devices,
+ * multiple clicks of small angle accumulate to the XI 2.1 scroll distance.
+ * This gives us smooth scrolling on those wheels for small movements, the
+ * legacy button events are generated whenever the full distance is reached.
+ * e.g. a 2 degree click angle requires 8 clicks before a legacy event is
+ * sent, but each of those clicks will send XI2.1 smooth scroll data for
+ * compatible clients.
+ */
+static inline double
+get_scroll_fraction(struct xf86libinput *driver_data,
+		    struct libinput_event_pointer *event,
+		    enum libinput_pointer_axis axis)
+{
+	double *fraction;
+	double f;
+	double angle;
+	int discrete;
+
+	switch (axis) {
+	case LIBINPUT_POINTER_AXIS_SCROLL_HORIZONTAL:
+		fraction = &driver_data->scroll.hdist_fraction;
+		break;
+	case LIBINPUT_POINTER_AXIS_SCROLL_VERTICAL:
+		fraction = &driver_data->scroll.vdist_fraction;
+		break;
+	default:
+		return 0.0;
+	}
+
+	if (*fraction != 0.0)
+		return *fraction;
+
+	/* Calculate the angle per single scroll event */
+	angle = libinput_event_pointer_get_axis_value(event, axis);
+	discrete = libinput_event_pointer_get_axis_value_discrete(event, axis);
+	angle /= discrete;
+
+	/* We only do magic for click angles smaller than 10 degrees */
+	if (angle >= 10) {
+		*fraction = 1.0;
+		return 1.0;
+	}
+
+	/* Figure out something that gets close to 15 degrees (the general
+	 * wheel default) with a number of clicks. This formula gives us
+	 * between 12 and and 20 degrees for the range of 1-10. See
+	 * https://bugs.freedesktop.org/attachment.cgi?id=128256 for a
+	 * graph.
+	 */
+	f = round(15.0/angle);
+
+	*fraction = f;
+
+	return f;
+}
+
+static inline bool
+calculate_axis_value(struct xf86libinput *driver_data,
+		     enum libinput_pointer_axis axis,
+		     struct libinput_event_pointer *event,
+		     double *value_out)
+{
+	enum libinput_pointer_axis_source source;
+	double value;
+
+	if (!libinput_event_pointer_has_axis(event, axis))
+		return false;
+
+	source = libinput_event_pointer_get_axis_source(event);
+	if (source == LIBINPUT_POINTER_AXIS_SOURCE_WHEEL) {
+		double scroll_fraction;
+
+		value = libinput_event_pointer_get_axis_value_discrete(event, axis);
+		scroll_fraction = get_scroll_fraction(driver_data, event, axis);
+		value *= driver_data->scroll.vdist/scroll_fraction;
+	} else {
+		value = libinput_event_pointer_get_axis_value(event, axis);
+	}
+
+	*value_out = value;
+
+	return true;
+}
+
 static void
 xf86libinput_handle_axis(InputInfoPtr pInfo, struct libinput_event_pointer *event)
 {
@@ -1330,7 +1488,6 @@ xf86libinput_handle_axis(InputInfoPtr pInfo, struct libinput_event_pointer *even
 	struct xf86libinput *driver_data = pInfo->private;
 	ValuatorMask *mask = driver_data->valuators;
 	double value;
-	enum libinput_pointer_axis axis;
 	enum libinput_pointer_axis_source source;
 
 	if ((driver_data->capabilities & CAP_POINTER) == 0)
@@ -1348,30 +1505,20 @@ xf86libinput_handle_axis(InputInfoPtr pInfo, struct libinput_event_pointer *even
 			return;
 	}
 
-	axis = LIBINPUT_POINTER_AXIS_SCROLL_VERTICAL;
-	if (libinput_event_pointer_has_axis(event, axis)) {
-		if (source == LIBINPUT_POINTER_AXIS_SOURCE_WHEEL) {
-			value = libinput_event_pointer_get_axis_value_discrete(event, axis);
-			value *= driver_data->scroll.vdist;
-		} else {
-			value = libinput_event_pointer_get_axis_value(event, axis);
-		}
+	if (calculate_axis_value(driver_data,
+				 LIBINPUT_POINTER_AXIS_SCROLL_VERTICAL,
+				 event,
+				 &value))
 		valuator_mask_set_double(mask, 3, value);
-	}
 
 	if (!driver_data->options.horiz_scrolling_enabled)
 		goto out;
 
-	axis = LIBINPUT_POINTER_AXIS_SCROLL_HORIZONTAL;
-	if (libinput_event_pointer_has_axis(event, axis)) {
-		if (source == LIBINPUT_POINTER_AXIS_SOURCE_WHEEL) {
-			value = libinput_event_pointer_get_axis_value_discrete(event, axis);
-			value *= driver_data->scroll.hdist;
-		} else {
-			value = libinput_event_pointer_get_axis_value(event, axis);
-		}
+	if (calculate_axis_value(driver_data,
+				 LIBINPUT_POINTER_AXIS_SCROLL_HORIZONTAL,
+				 event,
+				 &value))
 		valuator_mask_set_double(mask, 2, value);
-	}
 
 out:
 	xf86PostMotionEventM(dev, Relative, mask);
@@ -1606,6 +1753,26 @@ xf86libinput_handle_tablet_button(InputInfoPtr pInfo,
 	return EVENT_HANDLED;
 }
 
+static void
+xf86libinput_apply_area(InputInfoPtr pInfo, double *x, double *y)
+{
+	struct xf86libinput *driver_data = pInfo->private;
+	const struct scale_factor *f = &driver_data->area_scale_factor;
+	double sx, sy;
+
+	if (driver_data->options.area.x == 0)
+		return;
+
+	/* In left-handed mode, libinput already gives us transformed
+	 * coordinates, so we can clip the same way. */
+
+	sx = min(*x * f->x, TABLET_AXIS_MAX);
+	sy = min(*y * f->y, TABLET_AXIS_MAX);
+
+	*x = sx;
+	*y = sy;
+}
+
 static enum event_handling
 xf86libinput_handle_tablet_axis(InputInfoPtr pInfo,
 				struct libinput_event_tablet_tool *event)
@@ -1615,22 +1782,25 @@ xf86libinput_handle_tablet_axis(InputInfoPtr pInfo,
 	ValuatorMask *mask = driver_data->valuators;
 	struct libinput_tablet_tool *tool;
 	double value;
+	double x, y;
 
 	if (xf86libinput_tool_queue_event(event))
 		return EVENT_QUEUED;
 
-	value = libinput_event_tablet_tool_get_x_transformed(event,
-							TABLET_AXIS_MAX);
-	valuator_mask_set_double(mask, 0, value);
-	value = libinput_event_tablet_tool_get_y_transformed(event,
-							TABLET_AXIS_MAX);
-	valuator_mask_set_double(mask, 1, value);
+	x = libinput_event_tablet_tool_get_x_transformed(event,
+							 TABLET_AXIS_MAX);
+	y = libinput_event_tablet_tool_get_y_transformed(event,
+							 TABLET_AXIS_MAX);
+	xf86libinput_apply_area(pInfo, &x, &y);
+	valuator_mask_set_double(mask, 0, x);
+	valuator_mask_set_double(mask, 1, y);
 
 	tool = libinput_event_tablet_tool_get_tool(event);
 
 	if (libinput_tablet_tool_has_pressure(tool)) {
-		value = libinput_event_tablet_tool_get_pressure(event);
-		value *= TABLET_PRESSURE_AXIS_MAX;
+		value = TABLET_PRESSURE_AXIS_MAX * libinput_event_tablet_tool_get_pressure(event);
+		if (driver_data->pressurecurve.values)
+			value = driver_data->pressurecurve.values[(int)value];
 		valuator_mask_set_double(mask, 2, value);
 	}
 
@@ -2063,13 +2233,7 @@ const struct libinput_interface interface = {
     .close_restricted = close_restricted,
 };
 
-static void
-xf86libinput_log_handler(struct libinput *libinput,
-			 enum libinput_log_priority priority,
-			 const char *format,
-			 va_list args)
-	_X_ATTRIBUTE_PRINTF(3, 0);
-
+_X_ATTRIBUTE_PRINTF(3, 0)
 static void
 xf86libinput_log_handler(struct libinput *libinput,
 			 enum libinput_log_priority priority,
@@ -2612,6 +2776,111 @@ xf86libinput_parse_rotation_angle_option(InputInfoPtr pInfo,
 }
 
 static void
+xf86libinput_parse_pressurecurve_option(InputInfoPtr pInfo,
+					struct xf86libinput *driver_data,
+					struct bezier_control_point pcurve[4])
+{
+	struct bezier_control_point controls[4] = {
+		{ 0.0, 0.0 },
+		{ 0.0, 0.0 },
+		{ 1.0, 1.0 },
+		{ 1.0, 1.0 },
+	};
+	float points[8];
+	char *str;
+	int rc = 0;
+	int test_bezier[64];
+	struct libinput_tablet_tool *tool = driver_data->tablet_tool;
+
+	if ((driver_data->capabilities & CAP_TABLET_TOOL) == 0)
+		return;
+
+	if (!tool || !libinput_tablet_tool_has_pressure(tool))
+		return;
+
+	str = xf86SetStrOption(pInfo->options,
+			       "TabletToolPressureCurve",
+			       NULL);
+	if (!str)
+		goto out;
+
+	rc = sscanf(str, "%f/%f %f/%f %f/%f %f/%f",
+		    &points[0], &points[1], &points[2], &points[3],
+		    &points[4], &points[5], &points[6], &points[7]);
+	if (rc != 8)
+		goto out;
+
+	for (int i = 0; i < 4; i++) {
+		if (points[i] < 0.0 || points[i] > 1.0)
+			goto out;
+	}
+
+	controls[0].x = points[0];
+	controls[0].y = points[1];
+	controls[1].x = points[2];
+	controls[1].y = points[3];
+	controls[2].x = points[4];
+	controls[2].y = points[5];
+	controls[3].x = points[6];
+	controls[3].y = points[7];
+
+	if (!cubic_bezier(controls, test_bezier, ARRAY_SIZE(test_bezier))) {
+		memcpy(controls, bezier_defaults, sizeof(controls));
+		goto out;
+	}
+
+	rc = 0;
+out:
+	if (rc != 0)
+		xf86IDrvMsg(pInfo, X_ERROR, "Invalid pressure curve: %s\n",  str);
+	free(str);
+	memcpy(pcurve, controls, sizeof(controls));
+	xf86libinput_set_pressurecurve(driver_data, controls);
+}
+
+static inline bool
+want_area_handling(struct xf86libinput *driver_data)
+{
+	struct libinput_device *device = driver_data->shared_device->device;
+
+	if ((driver_data->capabilities & CAP_TABLET_TOOL) == 0)
+		return false;
+
+	/* If we have a calibration matrix, it's a built-in tablet and we
+	 * don't need to set the area ratio on those */
+	return !libinput_device_config_calibration_has_matrix(device);
+}
+
+static void
+xf86libinput_parse_tablet_area_option(InputInfoPtr pInfo,
+				      struct xf86libinput *driver_data,
+				      struct ratio *area_out)
+{
+	char *str;
+	int rc;
+	struct ratio area;
+
+	if (!want_area_handling(driver_data))
+		return;
+
+	str = xf86SetStrOption(pInfo->options,
+			       "TabletToolAreaRatio",
+			       NULL);
+	if (!str || strcmp(str, "default") == 0)
+		goto out;
+
+	rc = sscanf(str, "%d:%d", &area.x, &area.y);
+	if (rc != 2 || area.x <= 0 || area.y <= 0) {
+		xf86IDrvMsg(pInfo, X_ERROR, "Invalid tablet tool area ratio: %s\n",  str);
+	} else {
+		*area_out = area;
+	}
+
+out:
+	free(str);
+}
+
+static void
 xf86libinput_parse_options(InputInfoPtr pInfo,
 			   struct xf86libinput *driver_data,
 			   struct libinput_device *device)
@@ -2644,6 +2913,13 @@ xf86libinput_parse_options(InputInfoPtr pInfo,
 		xf86libinput_parse_draglock_option(pInfo, driver_data);
 		options->horiz_scrolling_enabled = xf86libinput_parse_horiz_scroll_option(pInfo);
 	}
+
+	xf86libinput_parse_pressurecurve_option(pInfo,
+						driver_data,
+						options->pressurecurve);
+	xf86libinput_parse_tablet_area_option(pInfo,
+					      driver_data,
+					      &options->area);
 }
 
 static const char*
@@ -2931,12 +3207,18 @@ xf86libinput_pre_init(InputDriverPtr drv,
 
 	pInfo->private = driver_data;
 	driver_data->pInfo = pInfo;
-	driver_data->scroll.vdist = 15;
-	driver_data->scroll.hdist = 15;
 	driver_data->path = path;
 	driver_data->shared_device = shared_device;
 	xorg_list_append(&driver_data->shared_device_link,
 			 &shared_device->device_list);
+
+	/* Scroll dist value matters for source finger/continuous. For those
+	 * devices libinput provides pixel-like data, changing this will
+	 * affect touchpad scroll speed. For wheels it doesn't matter as
+	 * we're using the discrete value only.
+	 */
+	driver_data->scroll.vdist = 15;
+	driver_data->scroll.hdist = 15;
 
 	if (!is_subdevice) {
 		if (libinput_device_has_capability(device, LIBINPUT_DEVICE_CAP_POINTER))
@@ -3096,6 +3378,8 @@ static Atom prop_rotation_angle_default;
 /* driver properties */
 static Atom prop_draglock;
 static Atom prop_horiz_scroll;
+static Atom prop_pressurecurve;
+static Atom prop_area_ratio;
 
 /* general properties */
 static Atom prop_float;
@@ -3846,6 +4130,108 @@ LibinputSetPropertyRotationAngle(DeviceIntPtr dev,
 	return Success;
 }
 
+static inline int
+LibinputSetPropertyPressureCurve(DeviceIntPtr dev,
+				 Atom atom,
+				 XIPropertyValuePtr val,
+				 BOOL checkonly)
+{
+	InputInfoPtr pInfo = dev->public.devicePrivate;
+	struct xf86libinput *driver_data = pInfo->private;
+	float *vals;
+	struct bezier_control_point controls[4];
+
+	if (val->format != 32 || val->size != 8 || val->type != prop_float)
+		return BadMatch;
+
+	vals = val->data;
+	controls[0].x = vals[0];
+	controls[0].y = vals[1];
+	controls[1].x = vals[2];
+	controls[1].y = vals[3];
+	controls[2].x = vals[4];
+	controls[2].y = vals[5];
+	controls[3].x = vals[6];
+	controls[3].y = vals[7];
+
+	if (checkonly) {
+		int test_bezier[64];
+
+		for (int i = 0; i < val->size; i++) {
+			if (vals[i] < 0.0 || vals[i] > 1.0)
+				return BadValue;
+		}
+
+		if (!xf86libinput_check_device (dev, atom))
+			return BadMatch;
+
+		if (!cubic_bezier(controls, test_bezier, ARRAY_SIZE(test_bezier)))
+			return BadValue;
+	} else {
+		xf86libinput_set_pressurecurve(driver_data, controls);
+		memcpy(driver_data->options.pressurecurve, controls,
+		       sizeof(controls));
+	}
+
+	return Success;
+}
+
+static inline int
+LibinputSetPropertyAreaRatio(DeviceIntPtr dev,
+			     Atom atom,
+			     XIPropertyValuePtr val,
+			     BOOL checkonly)
+{
+	InputInfoPtr pInfo = dev->public.devicePrivate;
+	struct xf86libinput *driver_data = pInfo->private;
+	uint32_t *vals;
+	struct ratio area = { 0, 0 };
+
+	if (val->format != 32 || val->size != 2 || val->type != XA_CARDINAL)
+		return BadMatch;
+
+	vals = val->data;
+	area.x = vals[0];
+	area.y = vals[1];
+
+	if (checkonly) {
+		if (area.x < 0 || area.y < 0)
+			return BadValue;
+
+		if ((area.x != 0 && area.y == 0) ||
+		    (area.x == 0 && area.y != 0))
+			return BadValue;
+
+		if (!xf86libinput_check_device (dev, atom))
+			return BadMatch;
+	} else {
+		struct xf86libinput *other;
+
+		xf86libinput_set_area_ratio(driver_data, &area);
+
+		xorg_list_for_each_entry(other,
+					 &driver_data->shared_device->device_list,
+					 shared_device_link) {
+			DeviceIntPtr other_device = other->pInfo->dev;
+
+			if (other->options.area.x == area.x &&
+			    other->options.area.y == area.y)
+				continue;
+
+			XIChangeDeviceProperty(other_device,
+					       atom,
+					       val->type,
+					       val->format,
+					       PropModeReplace,
+					       val->size,
+					       val->data,
+					       TRUE);
+		}
+	}
+
+	return Success;
+}
+
 static int
 LibinputSetProperty(DeviceIntPtr dev, Atom atom, XIPropertyValuePtr val,
                  BOOL checkonly)
@@ -3898,6 +4284,10 @@ LibinputSetProperty(DeviceIntPtr dev, Atom atom, XIPropertyValuePtr val,
 	}
 	else if (atom == prop_rotation_angle)
 		rc = LibinputSetPropertyRotationAngle(dev, atom, val, checkonly);
+	else if (atom == prop_pressurecurve)
+		rc = LibinputSetPropertyPressureCurve(dev, atom, val, checkonly);
+	else if (atom == prop_area_ratio)
+		rc = LibinputSetPropertyAreaRatio(dev, atom, val, checkonly);
 	else if (atom == prop_device || atom == prop_product_id ||
 		 atom == prop_tap_default ||
 		 atom == prop_tap_drag_default ||
@@ -4723,6 +5113,54 @@ LibinputInitRotationAngleProperty(DeviceIntPtr dev,
 }
 
 static void
+LibinputInitPressureCurveProperty(DeviceIntPtr dev,
+				  struct xf86libinput *driver_data)
+{
+	const struct bezier_control_point *curve = driver_data->options.pressurecurve;
+	struct libinput_tablet_tool *tool = driver_data->tablet_tool;
+	float data[8];
+
+	if ((driver_data->capabilities & CAP_TABLET_TOOL) == 0)
+		return;
+
+	if (!tool || !libinput_tablet_tool_has_pressure(tool))
+		return;
+
+	data[0] = curve[0].x;
+	data[1] = curve[0].y;
+	data[2] = curve[1].x;
+	data[3] = curve[1].y;
+	data[4] = curve[2].x;
+	data[5] = curve[2].y;
+	data[6] = curve[3].x;
+	data[7] = curve[3].y;
+
+	prop_pressurecurve = LibinputMakeProperty(dev,
+						  LIBINPUT_PROP_TABLET_TOOL_PRESSURECURVE,
+						  prop_float, 32,
+						  8, data);
+}
+
+static void
+LibinputInitTabletAreaRatioProperty(DeviceIntPtr dev,
+				    struct xf86libinput *driver_data)
+{
+	const struct ratio *ratio = &driver_data->options.area;
+	uint32_t data[2];
+
+	if (!want_area_handling(driver_data))
+		return;
+
+	data[0] = ratio->x;
+	data[1] = ratio->y;
+
+	prop_area_ratio = LibinputMakeProperty(dev,
+					       LIBINPUT_PROP_TABLET_TOOL_AREA_RATIO,
+					       XA_CARDINAL, 32,
+					       2, data);
+}
+
+static void
 LibinputInitProperty(DeviceIntPtr dev)
 {
 	InputInfoPtr pInfo  = dev->public.devicePrivate;
@@ -4778,4 +5216,6 @@ LibinputInitProperty(DeviceIntPtr dev)
 
 	LibinputInitDragLockProperty(dev, driver_data);
 	LibinputInitHorizScrollProperty(dev, driver_data);
+	LibinputInitPressureCurveProperty(dev, driver_data);
+	LibinputInitTabletAreaRatioProperty(dev, driver_data);
 }
