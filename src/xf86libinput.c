@@ -65,6 +65,9 @@
 #define TOUCH_MAX_SLOTS 15
 #define XORG_KEYCODE_OFFSET 8
 
+#define streq(a, b) (strcmp(a, b) == 0)
+#define strneq(a, b, n) (strncmp(a, b, n) == 0)
+
 /*
    libinput does not provide axis information for absolute devices, instead
    it scales into the screen dimensions provided. So we set up the axes with
@@ -259,7 +262,7 @@ xf86libinput_is_subdevice(InputInfoPtr pInfo)
 	BOOL is_subdevice;
 
 	source = xf86SetStrOption(pInfo->options, "_source", "");
-	is_subdevice = strcmp(source, "_driver/libinput") == 0;
+	is_subdevice = streq(source, "_driver/libinput");
 	free(source);
 
 	return is_subdevice;
@@ -1213,7 +1216,7 @@ is_libinput_device(InputInfoPtr pInfo)
 	BOOL rc;
 
 	driver = xf86CheckStrOption(pInfo->options, "driver", "");
-	rc = strcmp(driver, "libinput") == 0;
+	rc = streq(driver, "libinput");
 	free(driver);
 
 	return rc;
@@ -2184,10 +2187,16 @@ open_restricted(const char *path, int flags, void *data)
 	InputInfoPtr pInfo;
 	int fd = -1;
 
+	/* Special handling for sysfs files (used for pad LEDs) */
+	if (strneq(path, "/sys/", 5)) {
+		fd = open(path, flags);
+		return fd < 0 ? -errno : fd;
+	}
+
 	nt_list_for_each_entry(pInfo, xf86FirstLocalDevice(), next) {
 		char *device = xf86CheckStrOption(pInfo->options, "Device", NULL);
 
-		if (device != NULL && strcmp(path, device) == 0) {
+		if (device != NULL && streq(path, device)) {
 			free(device);
 			break;
 		}
@@ -2353,9 +2362,9 @@ xf86libinput_parse_tap_buttonmap_option(InputInfoPtr pInfo,
 			       "TappingButtonMap",
 			       NULL);
 	if (str) {
-		if (strcmp(str, "lmr") == 0)
+		if (streq(str, "lmr"))
 			map = LIBINPUT_CONFIG_TAP_MAP_LMR;
-		else if (strcmp(str, "lrm") == 0)
+		else if (streq(str, "lrm"))
 			map = LIBINPUT_CONFIG_TAP_MAP_LRM;
 		else
 			xf86IDrvMsg(pInfo, X_ERROR,
@@ -2468,11 +2477,11 @@ xf86libinput_parse_sendevents_option(InputInfoPtr pInfo,
 				   "SendEventsMode",
 				   NULL);
 	if (modestr) {
-		if (strcmp(modestr, "enabled") == 0)
+		if (streq(modestr, "enabled"))
 			mode = LIBINPUT_CONFIG_SEND_EVENTS_ENABLED;
-		else if (strcmp(modestr, "disabled") == 0)
+		else if (streq(modestr, "disabled"))
 			mode = LIBINPUT_CONFIG_SEND_EVENTS_DISABLED;
-		else if (strcmp(modestr, "disabled-on-external-mouse") == 0)
+		else if (streq(modestr, "disabled-on-external-mouse"))
 			mode = LIBINPUT_CONFIG_SEND_EVENTS_DISABLED_ON_EXTERNAL_MOUSE;
 		else
 			xf86IDrvMsg(pInfo, X_ERROR,
@@ -2866,7 +2875,7 @@ xf86libinput_parse_tablet_area_option(InputInfoPtr pInfo,
 	str = xf86SetStrOption(pInfo->options,
 			       "TabletToolAreaRatio",
 			       NULL);
-	if (!str || strcmp(str, "default") == 0)
+	if (!str || streq(str, "default"))
 		goto out;
 
 	rc = sscanf(str, "%d:%d", &area.x, &area.y);
@@ -3386,17 +3395,43 @@ static Atom prop_float;
 static Atom prop_device;
 static Atom prop_product_id;
 
-static inline void
-update_mode_prop(InputInfoPtr pInfo,
-		 struct libinput_event_tablet_pad *event)
-{
-	struct xf86libinput *driver_data = pInfo->private;
+struct mode_prop_state {
+	int deviceid;
+	InputInfoPtr pInfo;
+
 	struct libinput_tablet_pad_mode_group *group;
 	unsigned int mode;
 	unsigned int idx;
+};
+
+static Bool
+update_mode_prop_cb(ClientPtr client, pointer closure)
+{
+	struct mode_prop_state *state = closure;
+	InputInfoPtr pInfo = state->pInfo, tmp;
+	struct xf86libinput *driver_data = pInfo->private;
+	BOOL found = FALSE;
 	XIPropertyValuePtr val;
 	int rc;
 	unsigned char groups[4] = {0};
+	struct libinput_tablet_pad_mode_group *group = state->group;
+	unsigned int mode = state->mode;
+	unsigned int idx = state->idx;
+
+	if (idx >= ARRAY_SIZE(groups))
+		goto out;
+
+	/* The device may have gotten removed before the WorkProc was
+	 * scheduled. X reuses deviceids, but if the pointer value and
+	 * device ID are what we had before, we're good */
+	nt_list_for_each_entry(tmp, xf86FirstLocalDevice(), next) {
+		if (tmp->dev->id == state->deviceid && tmp == pInfo) {
+			found = TRUE;
+			break;
+		}
+	}
+	if (!found)
+		goto out;
 
 	rc = XIGetDeviceProperty(pInfo->dev,
 				 prop_mode_groups,
@@ -3404,18 +3439,12 @@ update_mode_prop(InputInfoPtr pInfo,
 	if (rc != Success ||
 	    val->format != 8 ||
 	    val->size <= 0)
-		return;
+		goto out;
 
 	memcpy(groups, (unsigned char*)val->data, val->size);
 
-	group = libinput_event_tablet_pad_get_mode_group(event);
-	mode = libinput_event_tablet_pad_get_mode(event);
-	idx = libinput_tablet_pad_mode_group_get_index(group);
-	if (idx >= ARRAY_SIZE(groups))
-		return;
-
 	if (groups[idx] == mode)
-		return;
+		goto out;
 
 	groups[idx] = mode;
 
@@ -3428,8 +3457,36 @@ update_mode_prop(InputInfoPtr pInfo,
 				    groups,
 				    TRUE);
 	driver_data->allow_mode_group_updates = false;
-	if (rc != Success)
+
+out:
+	libinput_tablet_pad_mode_group_unref(group);
+	free(state);
+	return TRUE;
+}
+
+static inline void
+update_mode_prop(InputInfoPtr pInfo,
+		 struct libinput_event_tablet_pad *event)
+{
+	struct libinput_tablet_pad_mode_group *group;
+	struct mode_prop_state *state;
+
+	state = calloc(1, sizeof(*state));
+	if (!state)
 		return;
+
+	state->deviceid = pInfo->dev->id;
+	state->pInfo = pInfo;
+
+	group = libinput_event_tablet_pad_get_mode_group(event);
+
+	state->group = libinput_tablet_pad_mode_group_ref(group);
+	state->mode = libinput_event_tablet_pad_get_mode(event);
+	state->idx = libinput_tablet_pad_mode_group_get_index(group);
+
+	/* Schedule a WorkProc so we don't update from within the input
+	   thread */
+	QueueWorkProc(update_mode_prop_cb, serverClient, state);
 }
 
 static inline BOOL
