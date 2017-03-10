@@ -1,3 +1,394 @@
+commit 153a7fc62fa87a2cc2516826b3eae16fa8cc861d
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Thu Mar 9 15:58:39 2017 +1000
+
+    xf86-input-libinput 0.25.0
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit 72fb6d304eec6eeeac6b42963c2729134d56de57
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Tue Feb 28 14:45:29 2017 +1000
+
+    test: fix a test failure on ppc64(le) and aarch64
+    
+    Caused by different results in -O0 vs -O2. The resulting array differs only
+    slightly but the initial sequence has one extra zero. That triggers our
+    assert, no other compiler flag seem to be affecting this.
+    
+    Compiled with -O0:
+    Breakpoint 1, test_nonzero_x_linear () at test-bezier.c:157
+    157			assert(bezier[x] > bezier[x-1]);
+    (gdb) p bezier
+    $6 = {0 <repeats 409 times>, 1, 2, 4, 5, 7, 9, 10, 12, 14, 15, 17, 19, 21, 22,
+    
+    Compiled with -O2:
+    (gdb) p bezier
+    $1 = {0 <repeats 410 times>, 1, 3, 5, 7, 9, 10, 12, 14, 15, 17, 19, 20, 22,
+    
+    Printing of the temporary numbers in the decasteljau function shows that a few
+    of them are off by one, e.g.
+        408.530612/0.836735 with O0, but
+        409.510204/0.836735 with O2
+    Note: these are not rounding errors caused by the code, the cast to int
+    happens afterwards.
+    
+    Hack around this by allowing for one extra zero before we check that the rest
+    of the curve is ascending again.
+    
+    https://bugs.freedesktop.org/show_bug.cgi?id=99992
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit aae2c8ad9a9f1712149c93d50284ddb5f37e4cbd
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Fri Feb 24 12:56:41 2017 +1000
+
+    Open sysfs files directly instead of going through the server
+    
+    Only use-case here are pad mode LEDs that now live in /sys/class/leds. Asking
+    the server to open them is pointless, the server only knows how to open Option
+    "Device". And since the LEDs are in sysfs we should have access to them
+    anyway, so no need for jumping through or hula-ing hoops.
+    
+    xf86CloseSerial() works as intended as it's a slim wrapper around close(), so
+    we only have to worry about the open() path here.
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit dafc296f2df587a1bb5feb37697c50608db4f246
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Fri Feb 24 12:34:10 2017 +1000
+
+    Add streq() macro, replace strcmp instances with it
+    
+    And why isn't this a thing in glibc yet
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+    Reviewed-by: Eric Engestrom <eric.engestrom@imgtec.com>
+
+commit 7c90f06d569b1b14d84075e7cea22bce06b925e6
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Fri Feb 24 12:27:37 2017 +1000
+
+    Update pad modes in a workproc, not during the input thread
+    
+    Updating the property directly causes us to send events from the input thread
+    which has some "interesting" side effects like messing up the reply order or
+    just crashing the server.
+    
+    Schedule a work proc instead and update it whenever the server is back in the
+    main thread.
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit 2eb5a2f0c08747df44eba6faff95cc9ce24b78ed
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Thu Feb 9 16:16:34 2017 +1000
+
+    xf86-input-libinput 0.24.0
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit 19ceef972e76bc491438198659748786d9457668
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Fri Jan 27 10:24:08 2017 +1000
+
+    Drop unnecessary function declaration
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit 07f30ea049303739bf6006d23ac924971a19d778
+Author: Mihail Konev <k.mvc@ya.ru>
+Date:   Thu Jan 26 14:00:21 2017 +1000
+
+    autogen: add default patch prefix
+    
+    Signed-off-by: Mihail Konev <k.mvc@ya.ru>
+
+commit 6187ed0450e68aaf727779ad61b50b0b70a1122e
+Author: Emil Velikov <emil.l.velikov@gmail.com>
+Date:   Mon Mar 9 12:00:52 2015 +0000
+
+    autogen.sh: use quoted string variables
+    
+    Place quotes around the $srcdir, $ORIGDIR and $0 variables to prevent
+    fall-outs, when they contain space.
+    
+    Signed-off-by: Emil Velikov <emil.l.velikov@gmail.com>
+    Reviewed-by: Peter Hutterer <peter.hutterer@who-t.net>
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit 974ab6b62bd2af97e1556314df28fe9f3b816e54
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Fri Oct 28 11:20:22 2016 +1000
+
+    Add tablet tool area ratio property
+    
+    By default, the X server maps the tablet axes to the available screen area.
+    When a tablet is mapped to the screen but has a different aspect ratio than
+    the screen, input data is skewed. Expose an area ratio property to map the
+    a subsection of the available tablet area into the desired ratio.
+    
+    Differences to the wacom driver: there the x/y min/max values must be
+    specified manually and in device coordinates. For this driver we merely
+    provide the area ratio (e.g. 4:3) and let the driver work out the rest.
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+    Reviewed-by: Jason Gerecke <jason.gerecke@wacom.com>
+
+commit 5d0470738125243c98f7a8cc40d62f53604a8051
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Mon Oct 24 14:41:51 2016 +1000
+
+    Implement stylus pressure curve support
+    
+    Takes a 4-point cubic bezier curve as input and maps the pressure coordinates
+    to the values outlined by this curve. This is an extension of the current
+    implementation in the xf86-input-wacom driver which only allows the two center
+    control points to be modified.
+    
+    Over the years a few users have noted that the wacom driver's pressure curve
+    makes it impossible to cap the pressure at a given value. Given our bezier
+    implementation here, it's effectively a freebie to add configurability of the
+    first and last control points. We do require all control points' x coordinates
+    to be in ascending order.
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit f65a5c50224efc34414f44c86700e15392b7039b
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Wed Oct 26 11:57:49 2016 +1000
+
+    Add a bezier curve implementation
+    
+    Needed for the wacom stylus pressure curve
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit 0dad7408fac3b69c4b6ab7705f39f790d7ba20c2
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Mon Nov 28 14:09:06 2016 +1000
+
+    Calculate the required scroll distance based on the angle
+    
+    For a mouse with a click angle of 15 degrees things are unchanged. For devices
+    with angles less than 10, the current code scrolled way too fast. Because the
+    angle wasn't used anywhere, each tick would count as full scroll wheel event,
+    a slight movement of the wheel would thus scroll as much as a large movement
+    on a normal mouse.
+    
+    Fix this by taking the actual click angle of the device into account. We
+    calculate some multiple of the angle that's close enough to the default 15
+    degrees of the wheel and then require that many click events to hit the full
+    scroll distance. For example, a mouse with a click angle of 3 degrees now
+    requires 5 clicks to trigger a full legacy scroll button event.
+    
+    XI2.1 clients get the intermediate events (i.e. in this case five times
+    one-fifth of the scroll distance) and can thus scroll smoothly, or more
+    specifically in smaller events than usual.
+    
+    https://bugs.freedesktop.org/show_bug.cgi?id=92772
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+    Reviewed-by: Hans de Goede <hdegoede@redhat.com>
+
+commit ea02578a4e888d9908eb6bed6dcb858f78acb8bb
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Tue Nov 29 08:31:32 2016 +1000
+
+    Move axis value calculation into a helper function
+    
+    The only difference here is the axis number.
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+    Reviewed-by: Hans de Goede <hdegoede@redhat.com>
+
+commit 2ceb2e1b18b6f971706230d16a2a5665d87aabd4
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Tue Nov 29 09:21:24 2016 +1000
+
+    Add a comment regarding scroll dist default values
+    
+    Changed this during development because I forgot that the value actually
+    matters (for touchpads anyway).
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+    Reviewed-by: Hans de Goede <hdegoede@redhat.com>
+
+commit f47f78eb0bd9fba455f01c8c6dead3bd75242b2b
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Tue Dec 20 15:36:55 2016 +1000
+
+    Ignore LED updates for disabled devices
+    
+    If an XKB AccessX timeout is set and a VT switch is triggered, the
+    AccessXTimeoutExpire function may be called after the device has already been
+    disabled. This can cause a null-pointer dereference as our shared libinput
+    device may have been released by then.
+    
+    In the legacy drivers this would've simply caused a write to an invalid fd
+    (-1), not a crash. Here we need to be more careful.
+    
+    https://bugs.freedesktop.org/show_bug.cgi?id=98464
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+    Reviewed-by: Hans de Goede <hdegoede@redhat.com>
+
+commit 1c3ce3ce3c315213511735db1b0fdd74ca8442d0
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Mon Dec 12 14:54:00 2016 +1000
+
+    xf86-input-libinput 0.23.0
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit 4d481ea7c80dad9f53b47c026959c25ad9da5211
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Mon Dec 5 14:25:31 2016 +1000
+
+    Fix default scroll button number
+    
+    Was exposing the evdev code rather than the xorg code.
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+    Reviewed-by: Hans de Goede <hdegoede@redhat.com>
+
+commit 72bac84df9ce72f2baf730655ecc23f1692d1e64
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Tue Nov 15 11:23:08 2016 +1000
+
+    If the parent libinput_device is unavailable, create a new one
+    
+    The parent device ref's the libinput device during pre_init and unref's it
+    during DEVICE_INIT, so the copy is lost. During DEVICE_ON, the libinput device
+    is re-added and ref'd, this one stays around now. But the takeaway is: unless
+    the device is enabled, no libinput device reference is available.
+    
+    If a device is a mixed pointer + keyboard device, a subdevice is created
+    during a WorkProc. The subdevice relied on the parent's libinput_device being
+    available and didn't even check for it. This WorkProc usually runs after
+    the parent's DEVICE_ON, so in most cases all is well.
+    
+    But when running without logind and the server is vt-switched away, the parent
+    device only runs PreInit and DEVICE_INIT but never DEVICE_ON, causing the
+    subdevice to burn, crash, and generally fail horribly when it dereferences the
+    parent's libinput device.
+    
+    Fix this because we have global warming already and don't need to burn more
+    things and also because it's considered bad user experience to have the
+    server crash. The simple fix is to check the parent device first and if it is
+    unavailable, create a new one because it will end up disabled as well anyway,
+    so the ref goes away as well. The use-case where the parent somehow gets
+    disabled but the subdevice doesn't is a bit too niche to worry about.
+    
+    This doesn't happen with logind because in that case we don't get a usable fd
+    while VT-switched away, so we can't even run PreInit and never get this far
+    (see the paused fd handling in the xfree86 code for that). It can be
+    reproduced by setting AutoEnableDevices off, but why would you do that,
+    seriously.
+    
+    https://bugs.freedesktop.org/show_bug.cgi?id=97117
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+    Reviewed-by: Hans de Goede <hdegoede@redhat.com>
+
+commit 0b073d90e63d644401769c61611638d65a4eaf44
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Fri Nov 11 12:36:01 2016 +1000
+
+    Link the left-handed property between the tools
+    
+    The property is tablet-wide, not just per tool. So when one tool is updated,
+    run through all other devices that share the same underlying device.
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+    Reviewed-by: Hans de Goede <hdegoede@redhat.com>
+
+commit 669fbb098516e0bdf6c62c52c1bcb12580de069b
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Tue Nov 1 10:42:19 2016 +1000
+
+    Drop indentation for matrix handling
+    
+    Exit early if the string is NULL to reduce indentation. No functional changes.
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit c4f0a9bcb846f70b85a285e8acea8fe086abdccb
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Tue Nov 1 10:06:03 2016 +1000
+
+    conf: match against tablets too
+    
+    Now that we sort below the xf86-input-wacom driver anyway, there's no good
+    reason to ignore tablets anymore.
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit a61e156326197dbbf1c1294693946c504af9daee
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Mon Oct 24 14:23:16 2016 +1000
+
+    man: sort the options and properties alphabetically
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit 552cbaf466a0aede8f789aa2013795f3b9ac253d
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Wed Oct 26 15:03:48 2016 +1000
+
+    Don't init the AccelSpeed/LeftHanded properties on the base tablet device
+    
+    This device never sends events, no point in exposing these options
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+    Reviewed-by: Eric Engestrom <eric.engestrom@imgtec.com>
+
+commit bc91d337d7cf765fd23e47783a498e4b3b334f39
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Thu Oct 20 08:42:53 2016 +1000
+
+    Fix potential NULL pointer dereferencing
+    
+    Found by coverity.
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit c8d2293873d3f86e5cefffa5c51cfe423d09c948
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Thu Oct 20 08:38:24 2016 +1000
+
+    Remove superfluous check for next being NULL
+    
+    is_libinput_device(next) causes a dereference of next anyway, so this cannot
+    ever be NULL.
+    
+    Besides, if next ends up as NULL that means we have lost count of how many
+    remaining devices use libinput, so we have other issues.
+    
+    Found by coverity.
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit a7014aa8c619ed9bc1cd5c0b38428fd88f1bc8d4
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Thu Oct 20 08:27:01 2016 +1000
+
+    Remove two unused variables
+    
+    They were never used anyway
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
+commit bf7fffde520277e13b350950de9dc5bf89858951
+Author: Peter Hutterer <peter.hutterer@who-t.net>
+Date:   Wed Oct 19 11:42:57 2016 +1000
+
+    Don't init the horiz scroll property on non-pointer devices
+    
+    Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+
 commit 728217775626e2086d7c3acd0d242562390f145b
 Author: Peter Hutterer <peter.hutterer@who-t.net>
 Date:   Wed Oct 19 10:55:12 2016 +1000
